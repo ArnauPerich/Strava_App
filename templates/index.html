@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Pulse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Syne:wght@400;600;800&family=JetBrains+Mono:wght@300;500&display=swap" rel="stylesheet">
+<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #080808;
+    --surface: rgba(255,255,255,0.04);
+    --border: rgba(255,255,255,0.07);
+    --text: #e8e8e8;
+    --muted: rgba(255,255,255,0.3);
+    --accent: #FF5533;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bot: env(safe-area-inset-bottom, 0px);
+  }
+
+  html, body {
+    height: 100%; width: 100%; overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+
+  /* grain overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    background-size: 256px 256px;
+    pointer-events: none; opacity: 0.5;
+  }
+
+  #app {
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column;
+    height: 100vh; height: 100dvh;
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bot);
+  }
+
+  /* ── Top bar ── */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 24px 10px;
+    flex-shrink: 0;
+  }
+  .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 26px; letter-spacing: 4px; color: var(--text);
+  }
+  .logo span { color: var(--accent); }
+  .athlete-info { display: flex; align-items: center; gap: 10px; }
+  .athlete-name {
+    font-size: 12px; font-weight: 600; letter-spacing: 1px;
+    color: var(--muted); text-transform: uppercase;
+  }
+  .logout-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--muted); padding: 10px; margin: -10px; transition: color 0.2s;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  }
+  .logout-btn:hover { color: var(--text); }
+  .logout-btn svg { display: block; pointer-events: none; }
+
+  /* ── Period tabs ── */
+  .period-tabs {
+    display: flex; gap: 6px;
+    padding: 10px 24px;
+    flex-shrink: 0;
+  }
+  .tab {
+    flex: 1; padding: 9px 0;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 10px;
+    font-family: 'Syne', sans-serif;
+    font-size: 11px; font-weight: 800; letter-spacing: 2px;
+    color: var(--muted); cursor: pointer; text-align: center;
+    transition: all 0.25s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tab.active {
+    background: rgba(255,85,51,0.12);
+    border-color: rgba(255,85,51,0.4);
+    color: var(--accent);
+  }
+
+  /* ── Total summary ── */
+  .summary {
+    text-align: center;
+    padding: 6px 24px 2px;
+    flex-shrink: 0;
+  }
+  .summary-km {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 52px; line-height: 1; letter-spacing: 2px;
+    color: var(--text); transition: all 0.4s ease;
+  }
+  .summary-km .unit { font-size: 20px; color: var(--muted); margin-left: 4px; }
+  .summary-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 2px;
+    color: var(--muted); text-transform: uppercase; margin-top: 2px;
+  }
+
+  /* ── Divider ── */
+  .divider {
+    height: 1px; background: var(--border);
+    margin: 12px 24px; flex-shrink: 0;
+  }
+
+  /* ── Physics canvas area ── */
+  #bubbles-area {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    touch-action: none;
+  }
+
+  /* ── Individual bubble ── */
+  .bubble {
+    position: absolute;
+    border-radius: 50%;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    cursor: grab;
+    will-change: transform;
+    touch-action: none;
+  }
+  .bubble.dragging { cursor: grabbing; z-index: 100; }
+
+  /* frosted glass layers */
+  .bubble-bg {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    background: rgba(12,12,12,0.55);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
+  .bubble-glow-inner {
+    position: absolute; inset: -15%;
+    border-radius: 50%;
+    filter: blur(22px);
+    opacity: 0.45;
+    animation: pulseGlow 3.5s ease-in-out infinite;
+  }
+  @keyframes pulseGlow {
+    0%,100% { opacity: 0.3; transform: scale(0.88); }
+    50%      { opacity: 0.55; transform: scale(1.05); }
+  }
+  .bubble-shine {
+    position: absolute;
+    top: 10%; left: 18%;
+    width: 35%; height: 28%;
+    border-radius: 50%;
+    background: radial-gradient(ellipse, rgba(255,255,255,0.12) 0%, transparent 70%);
+    filter: blur(4px);
+  }
+  .bubble-ring {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    border: 1px solid;
+    opacity: 0.25;
+  }
+  .bubble-ring2 {
+    position: absolute; inset: 4px;
+    border-radius: 50%;
+    border: 1px solid;
+    opacity: 0.08;
+  }
+  .bubble-content {
+    position: relative; z-index: 2;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 0; text-align: center;
+    width: 100%; height: 100%;
+    overflow: hidden;
+  }
+  .bubble-type {
+    font-weight: 800; letter-spacing: 1.5px;
+    text-transform: uppercase; opacity: 0.75;
+    line-height: 1.1;
+    max-width: 92%;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .bubble-km {
+    font-family: 'Bebas Neue', sans-serif;
+    line-height: 1; letter-spacing: 1px;
+    margin: 1px 0;
+  }
+  .bubble-km .km-unit {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 300; font-size: 0.4em; opacity: 0.6;
+    margin-left: 1px;
+  }
+  .bubble-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 300; opacity: 0.4;
+    line-height: 1.1; white-space: nowrap;
+  }
+
+  /* ── Status bar ── */
+  .statusbar {
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    gap: 6px; padding: 8px 24px;
+  }
+  .status-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #333; transition: background 0.3s ease;
+  }
+  .status-dot.live { background: #00FFB2; box-shadow: 0 0 6px #00FFB2; }
+  .status-dot.syncing { background: #FFD60A; animation: blink 0.8s ease infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .status-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; color: var(--muted); letter-spacing: 1px;
+  }
+
+  /* ── Auth / empty states ── */
+  .state-center {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 20px; padding: 40px;
+  }
+  .connect-btn {
+    display: flex; align-items: center; gap: 10px;
+    background: #FC4C02; color: white;
+    border: none; border-radius: 14px;
+    padding: 16px 28px;
+    font-family: 'Syne', sans-serif;
+    font-size: 14px; font-weight: 800;
+    letter-spacing: 1px; text-transform: uppercase;
+    cursor: pointer; text-decoration: none;
+    box-shadow: 0 0 40px rgba(252,76,2,0.3);
+    transition: all 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .connect-btn:hover { transform: translateY(-2px); box-shadow: 0 0 60px rgba(252,76,2,0.5); }
+  .connect-tagline {
+    font-size: 12px; color: var(--muted); text-align: center;
+    line-height: 1.6; letter-spacing: 0.5px;
+  }
+  .skeleton-wrap {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    gap: 20px; flex-wrap: wrap; padding: 20px;
+  }
+  .skeleton-bubble {
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.06));
+    border: 1px solid var(--border);
+    animation: shimmer 1.5s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+  @keyframes shimmer { 0%,100%{opacity:0.4} 50%{opacity:0.8} }
+  .empty-msg {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 12px; color: var(--muted);
+    font-size: 13px; line-height: 1.7; text-align: center;
+  }
+  .empty-icon { font-size: 40px; opacity: 0.3; }
+</style>
+</head>
+<body>
+
+<div id="app" data-auth="{{ 'yes' if authenticated else 'no' }}">
+
+  {% if not authenticated %}
+  <div class="topbar">
+    <div class="logo">PUL<span>SE</span></div>
+  </div>
+
+  <!-- shown briefly while we try to auto-login with a stored device token -->
+  <div class="state-center" id="checking-screen">
+    <div class="logo" style="font-size:42px">PUL<span style="color:#FF5533">SE</span></div>
+    <div style="font-size:11px;letter-spacing:3px;color:rgba(255,255,255,0.2);text-transform:uppercase">conectando…</div>
+  </div>
+
+  <div class="state-center" id="connect-screen" style="display:none">
+    <div style="text-align:center">
+      <div class="logo" style="font-size:42px;margin-bottom:8px">PUL<span style="color:#FF5533">SE</span></div>
+      <div style="font-size:11px;letter-spacing:3px;color:rgba(255,255,255,0.2);text-transform:uppercase">tu actividad, de un vistazo</div>
+    </div>
+    <a href="/auth/strava" class="connect-btn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
+      Conectar con Strava
+    </a>
+    <div class="connect-tagline">
+      Conecta tu cuenta para ver tus<br>kilómetros por semana, mes y año.
+    </div>
+  </div>
+
+  {% else %}
+  <div class="topbar">
+    <div class="logo">PUL<span>SE</span></div>
+    <div class="athlete-info">
+      <div class="athlete-name">{{ firstname }}</div>
+      <a href="#" class="logout-btn" id="logout-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </a>
+    </div>
+  </div>
+
+  <div class="period-tabs">
+    <button class="tab active" data-period="week">SEMANA</button>
+    <button class="tab" data-period="month">MES</button>
+    <button class="tab" data-period="year">AÑO</button>
+  </div>
+
+  <div class="summary">
+    <div class="summary-km" id="total-km">—<span class="unit">km</span></div>
+    <div class="summary-label" id="summary-label">total esta semana</div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div id="bubbles-area">
+    <div class="skeleton-wrap">
+      <div class="skeleton-bubble" style="width:150px;height:150px"></div>
+      <div class="skeleton-bubble" style="width:110px;height:110px;margin-top:30px"></div>
+      <div class="skeleton-bubble" style="width:130px;height:130px"></div>
+    </div>
+  </div>
+
+  {% endif %}
+
+</div>
+
+<script>
+// ── Device token: persistent auto-login that survives cookie loss ──────────────
+const DT_KEY = 'pulse_device_token';
+
+(function handleDeviceToken() {
+  const app = document.getElementById('app');
+  const authed = app.getAttribute('data-auth') === 'yes';
+
+  // Just came back from Strava OAuth with ?dt=... → store it and clean the URL
+  const params = new URLSearchParams(window.location.search);
+  const dt = params.get('dt');
+  if (dt) {
+    try { localStorage.setItem(DT_KEY, dt); } catch (e) {}
+    params.delete('dt');
+    const clean = window.location.pathname + (params.toString() ? '?' + params : '');
+    window.history.replaceState({}, '', clean);
+  }
+
+  if (authed) return; // session is alive, nothing to do
+
+  // No session → try to restore it with the stored device token
+  const stored = (() => { try { return localStorage.getItem(DT_KEY); } catch (e) { return null; } })();
+  const connectScreen  = document.getElementById('connect-screen');
+  const checkingScreen = document.getElementById('checking-screen');
+
+  function showConnect() {
+    if (checkingScreen) checkingScreen.style.display = 'none';
+    if (connectScreen)  connectScreen.style.display = 'flex';
+  }
+
+  if (!stored) { showConnect(); return; }
+
+  fetch('/api/device-login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: stored }),
+  })
+  .then(r => r.ok ? r.json() : Promise.reject())
+  .then(() => window.location.reload())   // session restored → reload as authenticated
+  .catch(() => {
+    try { localStorage.removeItem(DT_KEY); } catch (e) {}  // stale token
+    showConnect();
+  });
+})();
+</script>
+
+{% if authenticated %}
+<script>
+const socket = io({ transports: ['websocket', 'polling'] });
+let currentPeriod = 'week';
+const periodLabels = { week:'total esta semana', month:'total este mes', year:'total este año' };
+
+// ── Physics engine ────────────────────────────────────────────────────────────
+const DAMPING   = 0.92;
+const RESTITUTION = 0.45;
+const CENTER_PULL = 0.006;
+
+let physBubbles = [];
+let rafId = null;
+let areaW = 0, areaH = 0;
+
+function measureArea() {
+  const area = document.getElementById('bubbles-area');
+  areaW = area.offsetWidth;
+  areaH = area.offsetHeight;
+}
+
+function toLocal(clientX, clientY) {
+  const rect = document.getElementById('bubbles-area').getBoundingClientRect();
+  return { x: clientX - rect.left, y: clientY - rect.top };
+}
+
+function stopPhysics() {
+  if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+}
+
+function startPhysics() {
+  stopPhysics();
+  function tick() {
+    rafId = requestAnimationFrame(tick);
+    const n = physBubbles.length;
+
+    const cx = areaW / 2, cy = areaH / 2;
+
+    for (let i = 0; i < n; i++) {
+      const b = physBubbles[i];
+      if (b.dragging) continue;
+
+      // attraction towards the center
+      const dx = cx - b.x, dy = cy - b.y;
+      b.vx += dx * CENTER_PULL;
+      b.vy += dy * CENTER_PULL;
+
+      // integrate
+      b.x += b.vx;
+      b.y += b.vy;
+
+      // wall collisions
+      if (b.x - b.r < 0)       { b.x = b.r;       b.vx = Math.abs(b.vx) * RESTITUTION; }
+      if (b.x + b.r > areaW)   { b.x = areaW-b.r; b.vx = -Math.abs(b.vx) * RESTITUTION; }
+      if (b.y - b.r < 0)       { b.y = b.r;       b.vy = Math.abs(b.vy) * RESTITUTION; }
+      if (b.y + b.r > areaH)   { b.y = areaH-b.r; b.vy = -Math.abs(b.vy) * RESTITUTION; }
+
+      // damping
+      b.vx *= DAMPING;
+      b.vy *= DAMPING;
+    }
+
+    // bubble-bubble collisions
+    for (let i = 0; i < n; i++) {
+      for (let j = i+1; j < n; j++) {
+        const a = physBubbles[i], b = physBubbles[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        const minDist = a.r + b.r + 2;
+        if (dist < minDist && dist > 0.001) {
+          // separate
+          const overlap = (minDist - dist) / 2;
+          const nx = dx/dist, ny = dy/dist;
+          if (!a.dragging) { a.x -= nx*overlap; a.y -= ny*overlap; }
+          if (!b.dragging) { b.x += nx*overlap; b.y += ny*overlap; }
+
+          // elastic velocity exchange
+          const dvx = b.vx - a.vx, dvy = b.vy - a.vy;
+          const dot = dvx*nx + dvy*ny;
+          if (dot < 0) {
+            const ma = a.r*a.r, mb = b.r*b.r, mt = ma+mb;
+            const impulse = (2 * dot * RESTITUTION);
+            if (!a.dragging) { a.vx += impulse*(mb/mt)*nx; a.vy += impulse*(mb/mt)*ny; }
+            if (!b.dragging) { b.vx -= impulse*(ma/mt)*nx; b.vy -= impulse*(ma/mt)*ny; }
+          }
+        }
+      }
+    }
+
+    // apply transforms
+    for (let i = 0; i < n; i++) {
+      const b = physBubbles[i];
+      b.el.style.transform = `translate(${b.x - b.r}px, ${b.y - b.r}px)`;
+    }
+  }
+  tick();
+}
+
+// ── Drag handling ─────────────────────────────────────────────────────────────
+function setupDrag(b) {
+  let lastX, lastY, velX = 0, velY = 0, prevX, prevY;
+
+  function onStart(cx, cy) {
+    b.dragging = true;
+    b.el.classList.add('dragging');
+    lastX = cx; lastY = cy;
+    prevX = cx; prevY = cy;
+    velX = 0; velY = 0;
+  }
+  function onMove(cx, cy) {
+    if (!b.dragging) return;
+    velX = cx - lastX;
+    velY = cy - lastY;
+    b.x += velX;
+    b.y += velY;
+    // clamp inside walls
+    b.x = Math.max(b.r, Math.min(areaW - b.r, b.x));
+    b.y = Math.max(b.r, Math.min(areaH - b.r, b.y));
+    lastX = cx; lastY = cy;
+  }
+  function onEnd() {
+    b.dragging = false;
+    b.el.classList.remove('dragging');
+    b.vx = velX * 0.6;
+    b.vy = velY * 0.6;
+  }
+
+  b.el.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    const p = toLocal(t.clientX, t.clientY);
+    onStart(p.x, p.y);
+  }, { passive: false });
+
+  b.el.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    const p = toLocal(t.clientX, t.clientY);
+    onMove(p.x, p.y);
+  }, { passive: false });
+
+  b.el.addEventListener('touchend', e => { e.preventDefault(); onEnd(); }, { passive: false });
+
+  // mouse fallback for desktop testing
+  b.el.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const p = toLocal(e.clientX, e.clientY);
+    onStart(p.x, p.y);
+    const mm = ev => { const q = toLocal(ev.clientX, ev.clientY); onMove(q.x, q.y); };
+    const mu = () => { onEnd(); window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu); };
+    window.addEventListener('mousemove', mm);
+    window.addEventListener('mouseup', mu);
+  });
+}
+
+// ── Render bubbles ────────────────────────────────────────────────────────────
+function bubbleSize(km, maxKm) {
+  if (maxKm === 0) return 58;
+  const minR = 36, maxR = 78;
+  return Math.round(minR + Math.pow(km/maxKm, 0.5) * (maxR - minR));
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function packPositions(bubbles, W, H) {
+  // simple pack: place one by one avoiding overlaps
+  const placed = [];
+  for (const b of bubbles) {
+    let tries = 0, ok = false;
+    while (tries < 300 && !ok) {
+      const x = b.r + Math.random() * (W - 2*b.r);
+      const y = b.r + Math.random() * (H - 2*b.r);
+      ok = placed.every(p => {
+        const d = Math.hypot(p.x-x, p.y-y);
+        return d >= p.r + b.r + 4;
+      });
+      if (ok) { b.x = x; b.y = y; }
+      tries++;
+    }
+    if (!ok) { b.x = b.r + Math.random()*(W-2*b.r); b.y = b.r + Math.random()*(H-2*b.r); }
+    placed.push(b);
+  }
+}
+
+function renderBubbles(activities) {
+  stopPhysics();
+  physBubbles = [];
+  const area = document.getElementById('bubbles-area');
+  measureArea();
+
+  if (!activities.length) {
+    area.innerHTML = `<div class="empty-msg"><div class="empty-icon">🏃</div>No hay actividades en este período.<br>¡A moverse!</div>`;
+    return;
+  }
+
+  area.innerHTML = '';
+  const maxKm = activities[0].km;
+
+  const bData = activities.map((act, i) => {
+    const r = bubbleSize(act.km, maxKm);
+
+    // text scales with radius
+    const kmFs   = clamp(r * 0.58, 16, 52);
+    const typeFs = clamp(r * 0.115, 5.5, 8.5);
+    const pad    = Math.round(r * 0.16);
+    const showType = r >= 30;             // tiny bubbles: number only
+
+    const el = document.createElement('div');
+    el.className = 'bubble';
+    el.style.cssText = `width:${r*2}px;height:${r*2}px;left:0;top:0;`;
+    el.innerHTML = `
+      <div class="bubble-glow-inner" style="background:${act.color};animation-delay:${i*0.6}s"></div>
+      <div class="bubble-bg"></div>
+      <div class="bubble-shine"></div>
+      <div class="bubble-ring" style="border-color:${act.color}"></div>
+      <div class="bubble-ring2" style="border-color:${act.color}"></div>
+      <div class="bubble-content" style="padding:${pad}px">
+        <div class="bubble-km" style="font-size:${kmFs}px;color:${act.color}">
+          ${act.km}<span class="km-unit">km</span>
+        </div>
+        ${showType ? `<div class="bubble-type" style="color:${act.color};font-size:${typeFs}px">${act.label}</div>` : ``}
+      </div>`;
+    area.appendChild(el);
+    return { el, r, x: r, y: r, vx: (Math.random()-0.5)*1.5, vy: -Math.random()*2, dragging: false };
+  });
+
+  packPositions(bData, areaW, areaH);
+  physBubbles = bData;
+
+  bData.forEach(b => {
+    b.el.style.transform = `translate(${b.x - b.r}px, ${b.y - b.r}px)`;
+    setupDrag(b);
+  });
+
+  startPhysics();
+}
+
+// ── Stats fetch ───────────────────────────────────────────────────────────────
+async function loadStats(period) {
+  setStatus('syncing', 'actualizando...');
+  try {
+    const res  = await fetch(`/api/stats?period=${period}`);
+    const data = await res.json();
+    document.getElementById('total-km').innerHTML = `${data.total_km}<span class="unit">km</span>`;
+    document.getElementById('summary-label').textContent = periodLabels[period];
+    renderBubbles(data.activities || []);
+    setStatus('live', `sync ${new Date().toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})}`);
+  } catch(e) {
+    setStatus('', 'error');
+  }
+}
+
+function setStatus(state, text) {
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-text');
+  if (dot) dot.className = `status-dot ${state}`;
+  if (txt) txt.textContent = text;
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    currentPeriod = btn.dataset.period;
+    loadStats(currentPeriod);
+  });
+});
+
+// ── Repack on resize ──────────────────────────────────────────────────────────
+// ── Re-measure & reflow on resize / orientation change ────────────────────────
+function reflow() {
+  measureArea();
+  if (physBubbles.length) {
+    packPositions(physBubbles, areaW, areaH);
+    physBubbles.forEach(b => { b.vx = 0; b.vy = 0; });
+  }
+}
+window.addEventListener('resize', reflow);
+window.addEventListener('orientationchange', () => setTimeout(reflow, 250));
+
+// ── Socket ────────────────────────────────────────────────────────────────────
+socket.on('connect', () => loadStats(currentPeriod));
+socket.on('refresh', () => loadStats(currentPeriod));
+socket.on('disconnect', () => setStatus('', 'sin conexión'));
+
+// ── Logout: revoke this device's token, clear local storage ───────────────────
+function doLogout(e) {
+  if (e) e.preventDefault();
+  let token = null;
+  try { token = localStorage.getItem(DT_KEY); } catch (err) {}
+  fetch('/api/logout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  }).finally(() => {
+    try { localStorage.removeItem(DT_KEY); } catch (err) {}
+    window.location.href = '/';
+  });
+}
+const logoutBtn = document.getElementById('logout-btn');
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', doLogout);
+  logoutBtn.addEventListener('touchend', doLogout);
+}
+
+loadStats(currentPeriod);
+</script>
+{% endif %}
+
+</body>
+</html>
