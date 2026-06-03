@@ -27,7 +27,11 @@ class _WSHijackFilter(logging.Filter):
 
 logging.getLogger("werkzeug").addFilter(_WSHijackFilter())
 
-app = Flask(__name__)
+_BACKEND_DIR  = os.path.dirname(os.path.abspath(__file__))
+_ROOT_DIR     = os.path.dirname(_BACKEND_DIR)
+_TEMPLATE_DIR = os.path.join(_ROOT_DIR, "frontend", "templates")
+
+app = Flask(__name__, template_folder=_TEMPLATE_DIR)
 app.secret_key = os.getenv("SECRET_KEY", "change_this_in_production")
 # Long-lived, persistent session cookie (helps when the device keeps the cookie)
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=365)
@@ -39,7 +43,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 CLIENT_ID     = os.getenv("STRAVA_CLIENT_ID")
 CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
 REDIRECT_URI  = os.getenv("REDIRECT_URI", "http://localhost:5000/callback")
-DB_PATH       = "activities.db"
+DB_PATH       = os.path.join(_BACKEND_DIR, "data", "activities.db")
 POLL_INTERVAL = 30  # seconds
 
 ACTIVITY_META = {

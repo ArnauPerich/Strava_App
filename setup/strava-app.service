@@ -1,0 +1,22 @@
+[Unit]
+Description=Pulse – Strava Activity Tracker
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/strava-app/backend
+EnvironmentFile=/opt/strava-app/backend/.env
+ExecStart=/opt/strava-app/venv/bin/gunicorn \
+    --worker-class eventlet \
+    --workers 1 \
+    --bind 127.0.0.1:5000 \
+    --timeout 120 \
+    --access-logfile /var/log/strava-app/access.log \
+    --error-logfile /var/log/strava-app/error.log \
+    app:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
