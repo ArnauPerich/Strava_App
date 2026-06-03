@@ -13,7 +13,7 @@ echo "==> Updating system packages..."
 apt-get update -y && apt-get upgrade -y
 
 echo "==> Installing dependencies..."
-apt-get install -y python3 python3-pip python3-venv nginx certbot python3-certbot-nginx git
+apt-get install -y python3 python3-pip python3-venv nginx git
 
 echo "==> Creating app directory..."
 mkdir -p "$APP_DIR"
@@ -59,12 +59,9 @@ echo "  Setup complete!"
 echo ""
 echo "  Next steps:"
 echo "  1. Edit $APP_DIR/backend/.env with your Strava credentials"
-echo "  2. Replace 'tu-dominio.com' in /etc/nginx/sites-available/strava-app"
-echo "  3. Obtain SSL certificate:"
-echo "       certbot --nginx -d tu-dominio.com"
-echo "  4. Start the service:"
+echo "  2. Start the service:"
 echo "       systemctl start $SERVICE_NAME"
-echo "  5. Check status:"
+echo "  3. Check status:"
 echo "       systemctl status $SERVICE_NAME"
 echo "       journalctl -u $SERVICE_NAME -f"
 echo "================================================================"
