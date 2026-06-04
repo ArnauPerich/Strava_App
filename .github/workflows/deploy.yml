@@ -9,16 +9,20 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            cd /tmp/strava-app
-            git pull origin PRO
-            cp /tmp/strava-app/backend/app.py /opt/strava-app/backend/app.py
-            cp /tmp/strava-app/backend/requirements.txt /opt/strava-app/backend/requirements.txt
-            /opt/strava-app/venv/bin/pip install -r /opt/strava-app/backend/requirements.txt -q
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} '
+            cd /tmp/strava-app &&
+            git pull origin PRO &&
+            cp /tmp/strava-app/backend/app.py /opt/strava-app/backend/app.py &&
+            cp /tmp/strava-app/backend/requirements.txt /opt/strava-app/backend/requirements.txt &&
+            /opt/strava-app/venv/bin/pip install -r /opt/strava-app/backend/requirements.txt -q &&
             systemctl restart strava-app
+          '
