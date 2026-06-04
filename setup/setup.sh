@@ -26,7 +26,6 @@ cp -r ../frontend "$APP_DIR/frontend"
 echo "==> Creating Python virtual environment..."
 python3 -m venv "$APP_DIR/venv"
 "$APP_DIR/venv/bin/pip" install --upgrade pip
-"$APP_DIR/venv/bin/pip" install eventlet
 "$APP_DIR/venv/bin/pip" install -r "$APP_DIR/backend/requirements.txt"
 
 echo "==> Creating data directory..."
