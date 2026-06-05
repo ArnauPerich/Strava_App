@@ -21,10 +21,8 @@ jobs:
       - name: Deploy
         run: |
           ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} '
-            cd /tmp/strava-app &&
+            cd /opt/strava-app &&
             git pull origin PRO &&
-            cp /tmp/strava-app/backend/app.py /opt/strava-app/backend/app.py &&
-            cp /tmp/strava-app/backend/requirements.txt /opt/strava-app/backend/requirements.txt &&
             /opt/strava-app/venv/bin/pip install -r /opt/strava-app/backend/requirements.txt -q &&
             systemctl restart strava-app
           '
