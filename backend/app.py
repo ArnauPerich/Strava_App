@@ -46,6 +46,29 @@ REDIRECT_URI  = os.getenv("REDIRECT_URI", "http://localhost:5000/callback")
 DB_PATH       = os.path.join(_BACKEND_DIR, "data", "activities.db")
 WEBHOOK_VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN", "")
 
+# ── Voice assistant (OpenAI: Whisper + GPT + TTS) ─────────────────────────────
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "nova")
+_openai_client = None
+
+def get_openai():
+    """Lazily build the OpenAI client so the app still boots without the key."""
+    global _openai_client
+    if _openai_client is None:
+        from openai import OpenAI
+        _openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    return _openai_client
+
+VOICE_SYSTEM_PROMPT = (
+    "Eres PULSE, el asistente de voz personal de una app de actividad deportiva "
+    "conectada a Strava. Respondes preguntas sobre las actividades deportivas del "
+    "usuario usando EXCLUSIVAMENTE los datos proporcionados abajo. Tu respuesta se "
+    "convertirá en audio, así que habla de forma natural, cercana y breve: máximo "
+    "2 o 3 frases, sin listas, sin markdown, sin emojis y sin símbolos raros. "
+    "Di los números redondeados y con un tono motivador. Responde siempre en español. "
+    "Si el dato que piden no está, dilo con naturalidad."
+)
+
 ACTIVITY_META = {
     "Run":          {"label": "Carrera",    "color": "#FF5533", "glow": "#FF553366"},
     "TrailRun":     {"label": "Trail",      "color": "#FF8C42", "glow": "#FF8C4266"},
@@ -282,6 +305,45 @@ def get_stats(athlete_id, period):
     return {"activities": result, "total_km": round(total_km, 1)}
 
 
+def build_activity_context(athlete_id):
+    """Compact, plain-text summary of the athlete's data for the voice LLM."""
+    now = datetime.now()
+    conn = sqlite3.connect(DB_PATH)
+    fn_row = conn.execute("SELECT firstname FROM tokens WHERE athlete_id=?",
+                          (str(athlete_id),)).fetchone()
+    firstname = (fn_row[0] if fn_row and fn_row[0] else "atleta")
+
+    parts = [
+        f"Nombre del usuario: {firstname}.",
+        f"Fecha y hora actual: {now.strftime('%d/%m/%Y %H:%M')}.",
+    ]
+
+    for period, lbl in (("week", "esta semana"), ("month", "este mes"), ("year", "este año")):
+        s = get_stats(athlete_id, period)
+        line = f"Resumen {lbl}: {s['total_km']} km en total."
+        for a in s["activities"]:
+            line += f" {a['label']}: {a['km']} km, {a['count']} act., {a['hours']} h."
+        parts.append(line)
+
+    rows = conn.execute("""
+        SELECT name, type, distance, moving_time, start_date, elevation_gain
+        FROM activities WHERE athlete_id=? ORDER BY start_date DESC LIMIT 15
+    """, (str(athlete_id),)).fetchall()
+    conn.close()
+
+    if rows:
+        parts.append("Últimas actividades (de más reciente a más antigua):")
+        for name, typ, dist, mt, sd, elev in rows:
+            meta = fallback_meta(typ)
+            day = (sd or "")[:10]
+            parts.append(
+                f"- {day} {meta['label']} «{name}»: "
+                f"{round((dist or 0)/1000, 1)} km, {round((mt or 0)/60)} min, "
+                f"{round(elev or 0)} m desnivel."
+            )
+    return "\n".join(parts)
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -378,6 +440,79 @@ def api_stats():
         return jsonify({"error": "unauthenticated"}), 401
     period = request.args.get("period", "week")
     return jsonify(get_stats(athlete_id, period))
+
+@app.route("/api/voice", methods=["POST"])
+def api_voice():
+    """Voice round-trip: audio in → Whisper → GPT → TTS → audio out."""
+    athlete_id = session.get("athlete_id")
+    if not athlete_id:
+        return jsonify({"error": "unauthenticated"}), 401
+    if not OPENAI_API_KEY:
+        return jsonify({"error": "no_api_key"}), 503
+
+    f = request.files.get("audio")
+    if not f:
+        return jsonify({"error": "no_audio"}), 400
+    audio_bytes = f.read()
+    if not audio_bytes:
+        return jsonify({"error": "no_audio"}), 400
+    filename = f.filename or "audio.webm"
+
+    client = get_openai()
+
+    # 1 ── Speech to text
+    try:
+        tr = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=(filename, audio_bytes),
+            language="es",
+        )
+        question = (tr.text or "").strip()
+    except Exception as e:
+        app.logger.error("whisper error: %s", e)
+        return jsonify({"error": "stt_failed"}), 502
+    if not question:
+        return jsonify({"error": "empty"}), 422
+
+    # 2 ── Reasoning with the athlete's data as context
+    context = build_activity_context(athlete_id)
+    history = session.get("voice_history", [])
+    messages = [{"role": "system", "content": VOICE_SYSTEM_PROMPT + "\n\nDATOS DEL USUARIO:\n" + context}]
+    messages += history
+    messages.append({"role": "user", "content": question})
+    try:
+        chat = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            temperature=0.6,
+            max_tokens=220,
+        )
+        answer = (chat.choices[0].message.content or "").strip()
+    except Exception as e:
+        app.logger.error("gpt error: %s", e)
+        return jsonify({"error": "llm_failed"}), 502
+    if not answer:
+        return jsonify({"error": "llm_failed"}), 502
+
+    # keep a short rolling history (text only) for follow-up questions
+    history.append({"role": "user", "content": question})
+    history.append({"role": "assistant", "content": answer})
+    session["voice_history"] = history[-6:]
+
+    # 3 ── Text to speech
+    try:
+        speech = client.audio.speech.create(
+            model="tts-1",
+            voice=OPENAI_TTS_VOICE,
+            input=answer,
+            response_format="mp3",
+        )
+        out = speech.content
+    except Exception as e:
+        app.logger.error("tts error: %s", e)
+        return jsonify({"error": "tts_failed"}), 502
+
+    return Response(out, mimetype="audio/mpeg")
 
 @app.route("/webhook", methods=["GET"])
 def webhook_verify():

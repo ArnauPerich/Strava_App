@@ -274,6 +274,127 @@
     font-size: 13px; line-height: 1.7; text-align: center;
   }
   .empty-icon { font-size: 40px; opacity: 0.3; }
+
+  /* ── Horizontal pager (swipe between screens) ── */
+  #pager {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: row;
+    overflow-x: auto; overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  #pager::-webkit-scrollbar { display: none; }
+  .page {
+    flex: 0 0 100%; width: 100%; height: 100%;
+    min-height: 0;
+    scroll-snap-align: start;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Page indicator dots ── */
+  .page-dots {
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px; padding: 9px 0 5px;
+  }
+  .page-dots .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(255,255,255,0.18);
+    transition: all 0.35s ease; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .page-dots .dot.active { background: var(--accent); width: 20px; border-radius: 3px; }
+
+  /* ── Voice page ── */
+  .voice-header { text-align: center; padding: 24px 24px 0; flex-shrink: 0; }
+  .voice-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 26px; letter-spacing: 5px; color: var(--text);
+  }
+  .voice-sub {
+    font-size: 10px; font-weight: 600; letter-spacing: 2px;
+    color: var(--muted); text-transform: uppercase; margin-top: 5px;
+  }
+  .orb-wrap {
+    flex: 1; min-height: 0;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  .orb {
+    --orb-color: var(--accent);
+    position: relative;
+    width: min(58vw, 230px); height: min(58vw, 230px);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    will-change: transform;
+    touch-action: none; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .orb-glow {
+    position: absolute; inset: -28%;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--orb-color) 0%, transparent 68%);
+    filter: blur(40px); opacity: 0.4;
+    animation: orbBreathe 4.5s ease-in-out infinite;
+    transition: opacity 0.35s ease, background 0.45s ease;
+  }
+  @keyframes orbBreathe {
+    0%,100% { opacity: 0.32; transform: scale(0.92); }
+    50%      { opacity: 0.5;  transform: scale(1.05); }
+  }
+  .orb-bg {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: rgba(14,14,14,0.55);
+    backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
+    border: 1px solid rgba(255,255,255,0.07);
+  }
+  .orb-shine {
+    position: absolute; top: 12%; left: 20%;
+    width: 34%; height: 26%; border-radius: 50%;
+    background: radial-gradient(ellipse, rgba(255,255,255,0.14) 0%, transparent 70%);
+    filter: blur(5px);
+  }
+  .orb-ring {
+    position: absolute; inset: 0; border-radius: 50%;
+    border: 1px solid var(--orb-color); opacity: 0.3;
+    transition: opacity 0.35s ease, border-color 0.45s ease;
+  }
+  .orb-ring2 {
+    position: absolute; inset: 8px; border-radius: 50%;
+    border: 1px solid var(--orb-color); opacity: 0.1;
+    transition: border-color 0.45s ease;
+  }
+  .orb-core {
+    position: relative; z-index: 2;
+    color: var(--orb-color);
+    display: flex; align-items: center; justify-content: center;
+    transition: color 0.45s ease;
+  }
+  .orb-core svg { display: block; }
+
+  /* orb states */
+  .orb.listening { --orb-color: #00FFB2; }
+  .orb.thinking  { --orb-color: #FFD60A; }
+  .orb.speaking  { --orb-color: #00CFFF; }
+  .orb.listening .orb-ring, .orb.speaking .orb-ring { opacity: 0.6; }
+  .orb.listening .orb-glow, .orb.speaking .orb-glow { opacity: 0.6; animation: none; }
+  .orb.thinking .orb-glow { animation: orbThink 1.1s ease-in-out infinite; }
+  @keyframes orbThink {
+    0%,100% { opacity: 0.3; transform: scale(0.9); }
+    50%      { opacity: 0.62; transform: scale(1.1); }
+  }
+
+  .voice-status {
+    flex-shrink: 0; text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 1px;
+    color: var(--muted);
+    padding: 0 24px 28px; min-height: 16px;
+    transition: color 0.3s ease;
+  }
 </style>
 </head>
 <body>
@@ -306,39 +427,78 @@
   </div>
 
   {% else %}
-  <div class="topbar">
-    <div class="logo">PUL<span>SE</span></div>
-    <div class="athlete-info">
-      <div class="athlete-name">{{ firstname }}</div>
-      <a href="#" class="logout-btn" id="logout-btn">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-          <polyline points="16 17 21 12 16 7"/>
-          <line x1="21" y1="12" x2="9" y2="12"/>
-        </svg>
-      </a>
-    </div>
+  <div id="pager">
+
+    <!-- ── Page 1: stats ── -->
+    <section class="page" id="page-stats">
+      <div class="topbar">
+        <div class="logo">PUL<span>SE</span></div>
+        <div class="athlete-info">
+          <div class="athlete-name">{{ firstname }}</div>
+          <a href="#" class="logout-btn" id="logout-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+          </a>
+        </div>
+      </div>
+
+      <div class="period-tabs">
+        <button class="tab active" data-period="week">SEMANA</button>
+        <button class="tab" data-period="month">MES</button>
+        <button class="tab" data-period="year">AÑO</button>
+      </div>
+
+      <div class="summary">
+        <div class="summary-km" id="total-km">—<span class="unit">km</span></div>
+        <div class="summary-label" id="summary-label">total esta semana</div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div id="bubbles-area">
+        <div class="skeleton-wrap">
+          <div class="skeleton-bubble" style="width:150px;height:150px"></div>
+          <div class="skeleton-bubble" style="width:110px;height:110px;margin-top:30px"></div>
+          <div class="skeleton-bubble" style="width:130px;height:130px"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Page 2: voice assistant ── -->
+    <section class="page" id="page-voice">
+      <div class="voice-header">
+        <div class="voice-title">ASISTENTE</div>
+        <div class="voice-sub">pregúntame sobre tu actividad</div>
+      </div>
+
+      <div class="orb-wrap">
+        <div class="orb idle" id="orb">
+          <div class="orb-glow"></div>
+          <div class="orb-bg"></div>
+          <div class="orb-shine"></div>
+          <div class="orb-ring"></div>
+          <div class="orb-ring2"></div>
+          <div class="orb-core">
+            <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="2" width="6" height="12" rx="3"/>
+              <path d="M5 10v1a7 7 0 0 0 14 0v-1"/>
+              <line x1="12" y1="19" x2="12" y2="22"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="voice-status" id="voice-status">Mantén pulsado para hablar</div>
+    </section>
+
   </div>
 
-  <div class="period-tabs">
-    <button class="tab active" data-period="week">SEMANA</button>
-    <button class="tab" data-period="month">MES</button>
-    <button class="tab" data-period="year">AÑO</button>
-  </div>
-
-  <div class="summary">
-    <div class="summary-km" id="total-km">—<span class="unit">km</span></div>
-    <div class="summary-label" id="summary-label">total esta semana</div>
-  </div>
-
-  <div class="divider"></div>
-
-  <div id="bubbles-area">
-    <div class="skeleton-wrap">
-      <div class="skeleton-bubble" style="width:150px;height:150px"></div>
-      <div class="skeleton-bubble" style="width:110px;height:110px;margin-top:30px"></div>
-      <div class="skeleton-bubble" style="width:130px;height:130px"></div>
-    </div>
+  <div class="page-dots">
+    <span class="dot active" data-page="0"></span>
+    <span class="dot" data-page="1"></span>
   </div>
 
   {% endif %}
@@ -698,6 +858,163 @@ if (logoutBtn) {
 }
 
 loadStats(currentPeriod);
+
+// ── Pager navigation (swipe + dots) ───────────────────────────────────────────
+(function pagerNav(){
+  const pager = document.getElementById('pager');
+  const dots  = Array.from(document.querySelectorAll('.page-dots .dot'));
+  if (!pager) return;
+  let raf = null;
+  pager.addEventListener('scroll', () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = null;
+      const idx = Math.round(pager.scrollLeft / pager.clientWidth);
+      dots.forEach((d, i) => d.classList.toggle('active', i === idx));
+    });
+  }, { passive: true });
+  dots.forEach((d, i) => d.addEventListener('click', () => {
+    pager.scrollTo({ left: i * pager.clientWidth, behavior: 'smooth' });
+  }));
+})();
+
+// ── Voice assistant (hold to talk → Whisper → GPT → TTS) ──────────────────────
+(function voiceAssistant(){
+  const orb      = document.getElementById('orb');
+  const glow     = orb ? orb.querySelector('.orb-glow') : null;
+  const statusEl = document.getElementById('voice-status');
+  if (!orb) return;
+
+  let stream = null, mediaRecorder = null, chunks = [];
+  let audioCtx = null, analyser = null, dataArr = null, rafId = null;
+  let recording = false, busy = false;
+
+  function setState(s, text){
+    orb.className = 'orb ' + s;
+    if (text != null) statusEl.textContent = text;
+  }
+
+  function ensureCtx(){
+    if (!audioCtx){
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      dataArr = new Uint8Array(analyser.frequencyBinCount);
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
+  // Drive the orb's scale + glow from live audio amplitude → "moves when it talks"
+  function animateAmp(base){
+    function loop(){
+      rafId = requestAnimationFrame(loop);
+      analyser.getByteFrequencyData(dataArr);
+      let sum = 0;
+      for (let i = 0; i < dataArr.length; i++) sum += dataArr[i];
+      const avg = sum / dataArr.length / 255;            // 0..1
+      orb.style.transform = `scale(${base + avg * 0.42})`;
+      if (glow) glow.style.opacity = (0.42 + avg * 0.5).toFixed(3);
+    }
+    loop();
+  }
+  function stopAnim(){
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = null;
+    orb.style.transform = '';
+    if (glow) glow.style.opacity = '';
+  }
+
+  function pickMime(){
+    const opts = ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg','audio/mpeg'];
+    for (const o of opts) if (window.MediaRecorder && MediaRecorder.isTypeSupported(o)) return o;
+    return '';
+  }
+
+  async function startRec(){
+    if (recording || busy) return;
+    try {
+      ensureCtx();
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch(e){ setState('idle', 'permiso de micro denegado'); return; }
+    recording = true;
+    chunks = [];
+    const mime = pickMime();
+    try {
+      mediaRecorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    } catch(e){ mediaRecorder = new MediaRecorder(stream); }
+    mediaRecorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    mediaRecorder.onstop = onRecStop;
+    mediaRecorder.start();
+    const micSrc = audioCtx.createMediaStreamSource(stream);
+    micSrc.connect(analyser);              // analyser only → no speaker feedback
+    setState('listening', 'escuchando…');
+    animateAmp(1.0);
+  }
+
+  function stopRec(){
+    if (!recording) return;
+    recording = false;
+    stopAnim();
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  }
+
+  async function onRecStop(){
+    if (stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+    if (!chunks.length){ setState('idle', 'Mantén pulsado para hablar'); return; }
+    const mime = (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
+    const ext  = mime.includes('mp4') ? 'mp4'
+               : mime.includes('ogg') ? 'ogg'
+               : mime.includes('mpeg') ? 'mp3' : 'webm';
+    const blob = new Blob(chunks, { type: mime });
+    if (blob.size < 1200){ setState('idle', 'No te he oído, repite'); return; }
+
+    busy = true;
+    setState('thinking', 'pensando…');
+    const fd = new FormData();
+    fd.append('audio', blob, 'audio.' + ext);
+    try {
+      const res = await fetch('/api/voice', { method: 'POST', body: fd });
+      if (!res.ok){
+        const j = await res.json().catch(() => ({}));
+        const msg = j.error === 'empty'      ? 'No te he oído, repite'
+                  : j.error === 'no_api_key' ? 'Falta configurar la API'
+                  : 'Algo ha fallado, reinténtalo';
+        busy = false; setState('idle', msg); return;
+      }
+      const buf = await res.arrayBuffer();
+      await playResponse(buf);
+    } catch(e){
+      busy = false; setState('idle', 'Sin conexión');
+    }
+  }
+
+  async function playResponse(arrayBuffer){
+    ensureCtx();
+    let audioBuf;
+    try { audioBuf = await audioCtx.decodeAudioData(arrayBuffer); }
+    catch(e){ busy = false; setState('idle', 'Error de audio'); return; }
+    const src = audioCtx.createBufferSource();
+    src.buffer = audioBuf;
+    src.connect(analyser);
+    analyser.connect(audioCtx.destination);   // route to speakers while speaking
+    setState('speaking', 'hablando…');
+    animateAmp(1.0);
+    src.onended = () => {
+      stopAnim();
+      try { src.disconnect(); analyser.disconnect(); } catch(e){}
+      busy = false;
+      setState('idle', 'Mantén pulsado para hablar');
+    };
+    src.start();
+  }
+
+  // hold-to-talk: press → record, release → send
+  orb.addEventListener('touchstart',  e => { e.preventDefault(); startRec(); }, { passive: false });
+  orb.addEventListener('touchend',    e => { e.preventDefault(); stopRec();  }, { passive: false });
+  orb.addEventListener('touchcancel', e => { e.preventDefault(); stopRec();  }, { passive: false });
+  orb.addEventListener('mousedown',   e => { e.preventDefault(); startRec(); });
+  window.addEventListener('mouseup',  () => { if (recording) stopRec(); });
+})();
 </script>
 {% endif %}
 
