@@ -2,10 +2,9 @@ import os
 import time
 import secrets
 import logging
-import threading
 import sqlite3
 from datetime import datetime, timedelta
-from flask import Flask, render_template, redirect, request, session, jsonify, Response
+from flask import Flask, render_template, redirect, request, session, jsonify, Response, send_from_directory
 from flask_socketio import SocketIO
 import requests
 from dotenv import load_dotenv
@@ -30,6 +29,7 @@ logging.getLogger("werkzeug").addFilter(_WSHijackFilter())
 _BACKEND_DIR  = os.path.dirname(os.path.abspath(__file__))
 _ROOT_DIR     = os.path.dirname(_BACKEND_DIR)
 _TEMPLATE_DIR = os.path.join(_ROOT_DIR, "frontend", "templates")
+_STATIC_DIR   = os.path.join(_ROOT_DIR, "frontend", "static")
 
 app = Flask(__name__, template_folder=_TEMPLATE_DIR)
 app.secret_key = os.getenv("SECRET_KEY", "change_this_in_production")
@@ -44,7 +44,7 @@ CLIENT_ID     = os.getenv("STRAVA_CLIENT_ID")
 CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
 REDIRECT_URI  = os.getenv("REDIRECT_URI", "http://localhost:5000/callback")
 DB_PATH       = os.path.join(_BACKEND_DIR, "data", "activities.db")
-POLL_INTERVAL = 30  # seconds
+WEBHOOK_VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN", "")
 
 ACTIVITY_META = {
     "Run":          {"label": "Carrera",    "color": "#FF5533", "glow": "#FF553366"},
@@ -216,6 +216,35 @@ def fetch_and_store(athlete_id, access_token, pages=2):
     return new_count
 
 
+def fetch_and_store_single(athlete_id, activity_id, access_token):
+    resp = requests.get(
+        f"https://www.strava.com/api/v3/activities/{activity_id}",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=10,
+    )
+    if not resp.ok:
+        return 0
+    act = resp.json()
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        INSERT OR IGNORE INTO activities
+            (strava_id, athlete_id, name, type, distance, moving_time, start_date, elevation_gain)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        str(act["id"]), str(athlete_id),
+        act.get("name", ""),
+        act.get("sport_type") or act.get("type", "Other"),
+        act.get("distance", 0),
+        act.get("moving_time", 0),
+        act.get("start_date_local", ""),
+        act.get("total_elevation_gain", 0),
+    ))
+    added = conn.total_changes
+    conn.commit()
+    conn.close()
+    return added
+
+
 # ── Stats query ───────────────────────────────────────────────────────────────
 
 def get_stats(athlete_id, period):
@@ -253,30 +282,6 @@ def get_stats(athlete_id, period):
     return {"activities": result, "total_km": round(total_km, 1)}
 
 
-# ── Background polling ────────────────────────────────────────────────────────
-
-_threads: dict = {}
-
-def _poll(athlete_id):
-    while True:
-        try:
-            token = get_valid_token(athlete_id)
-            if token:
-                new = fetch_and_store(athlete_id, token, pages=1)
-                if new:
-                    socketio.emit("refresh", {"athlete_id": athlete_id})
-        except Exception as e:
-            print(f"[poll] {athlete_id}: {e}")
-        time.sleep(POLL_INTERVAL)
-
-def ensure_polling(athlete_id):
-    t = _threads.get(athlete_id)
-    if not t or not t.is_alive():
-        t = threading.Thread(target=_poll, args=(athlete_id,), daemon=True)
-        _threads[athlete_id] = t
-        t.start()
-
-
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -288,12 +293,15 @@ def index():
 
 # Silence the icon requests iOS/Safari fire automatically
 @app.route("/favicon.ico")
-@app.route("/apple-touch-icon.png")
 @app.route("/apple-touch-icon-precomposed.png")
 @app.route("/apple-touch-icon-120x120.png")
 @app.route("/apple-touch-icon-120x120-precomposed.png")
 def _icons():
     return Response(status=204)
+
+@app.route("/apple-touch-icon.png")
+def _apple_touch_icon():
+    return send_from_directory(_STATIC_DIR, "apple-touch-icon.png")
 
 @app.route("/auth/strava")
 def auth_strava():
@@ -330,7 +338,6 @@ def callback():
     session["firstname"]  = firstname
     # Initial bulk fetch
     fetch_and_store(athlete_id, data["access_token"], pages=10)
-    ensure_polling(athlete_id)
     # Issue a per-device token the frontend stores in localStorage for auto-login
     dt = create_device_token(athlete_id)
     return redirect(f"/?dt={dt}")
@@ -347,7 +354,6 @@ def device_login():
     session.permanent = True
     session["athlete_id"] = athlete_id
     session["firstname"]  = row[0] if row else "Atleta"
-    ensure_polling(athlete_id)
     return jsonify({"ok": True, "firstname": session["firstname"]})
 
 @app.route("/logout")
@@ -371,11 +377,28 @@ def api_stats():
     period = request.args.get("period", "week")
     return jsonify(get_stats(athlete_id, period))
 
-@socketio.on("connect")
-def on_connect():
-    athlete_id = session.get("athlete_id")
-    if athlete_id:
-        ensure_polling(athlete_id)
+@app.route("/webhook", methods=["GET"])
+def webhook_verify():
+    mode      = request.args.get("hub.mode")
+    token     = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
+    if mode == "subscribe" and token == WEBHOOK_VERIFY_TOKEN:
+        return jsonify({"hub.challenge": challenge})
+    return Response(status=403)
+
+@app.route("/webhook", methods=["POST"])
+def webhook_event():
+    data = request.get_json(silent=True) or {}
+    if data.get("object_type") == "activity" and data.get("aspect_type") in ("create", "update"):
+        athlete_id  = str(data.get("owner_id", ""))
+        activity_id = data.get("object_id")
+        if athlete_id and activity_id:
+            token = get_valid_token(athlete_id)
+            if token:
+                added = fetch_and_store_single(athlete_id, activity_id, token)
+                if added:
+                    socketio.emit("refresh", {"athlete_id": athlete_id})
+    return jsonify({"status": "ok"})
 
 
 init_db()
