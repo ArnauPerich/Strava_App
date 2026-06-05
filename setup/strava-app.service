@@ -7,12 +7,14 @@ User=www-data
 Group=www-data
 WorkingDirectory=/opt/strava-app/backend
 EnvironmentFile=/opt/strava-app/backend/.env
+RuntimeDirectory=strava-app
 ExecStart=/opt/strava-app/venv/bin/gunicorn \
     --worker-class gthread \
     --workers 1 \
     --threads 4 \
     --bind 127.0.0.1:5000 \
     --timeout 120 \
+    --worker-tmp-dir /tmp \
     --access-logfile /var/log/strava-app/access.log \
     --error-logfile /var/log/strava-app/error.log \
     app:app
