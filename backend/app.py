@@ -319,6 +319,7 @@ def auth_strava():
 def callback():
     code = request.args.get("code")
     if not code:
+        app.logger.error("callback sin code: args=%s", dict(request.args))
         return redirect("/")
     resp = requests.post("https://www.strava.com/oauth/token", data={
         "client_id": CLIENT_ID,
@@ -327,6 +328,7 @@ def callback():
         "grant_type": "authorization_code",
     })
     if not resp.ok:
+        app.logger.error("token POST falló: %s %s", resp.status_code, resp.text)
         return redirect("/")
     data = resp.json()
     athlete    = data["athlete"]
