@@ -24,6 +24,8 @@ jobs:
             cd /tmp/strava-app &&
             git pull origin PRO &&
             cp -r /tmp/strava-app/. /opt/strava-app/ &&
+            cp /tmp/strava-app/setup/strava-app.service /etc/systemd/system/strava-app.service &&
             /opt/strava-app/venv/bin/pip install -r /opt/strava-app/backend/requirements.txt -q &&
+            systemctl daemon-reload &&
             systemctl restart strava-app
           '
