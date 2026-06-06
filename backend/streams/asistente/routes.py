@@ -2,7 +2,7 @@
 from flask import Blueprint, request, session, jsonify, Response, current_app
 
 import config
-from streams.asistente.service import VOICE_SYSTEM_PROMPT, get_openai, build_activity_context
+from streams.asistente.service import get_openai, generate_answer
 
 asistente_bp = Blueprint("asistente", __name__)
 
@@ -40,20 +40,11 @@ def api_voice():
     if not question:
         return jsonify({"error": "empty"}), 422
 
-    # 2 ── Reasoning with the athlete's data as context
-    context = build_activity_context(athlete_id)
+    # 2 ── Reasoning: el LLM consulta el historial con tools si hace falta
     history = session.get("voice_history", [])
-    messages = [{"role": "system", "content": VOICE_SYSTEM_PROMPT + "\n\nDATOS DEL USUARIO:\n" + context}]
-    messages += history
-    messages.append({"role": "user", "content": question})
     try:
-        chat = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            temperature=0.6,
-            max_tokens=220,
-        )
-        answer = (chat.choices[0].message.content or "").strip()
+        answer = generate_answer(client, athlete_id, question, history,
+                                 logger=current_app.logger)
     except Exception as e:
         current_app.logger.error("gpt error: %s", e)
         return jsonify({"error": "llm_failed"}), 502
