@@ -120,6 +120,31 @@ def init_db():
             last_seen   TEXT
         )
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS sync_state (
+            athlete_id  TEXT PRIMARY KEY,
+            synced_at   TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def initial_sync_done(athlete_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT 1 FROM sync_state WHERE athlete_id=?", (str(athlete_id),)
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def mark_initial_sync_done(athlete_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT OR IGNORE INTO sync_state (athlete_id, synced_at) VALUES (?, ?)",
+        (str(athlete_id), datetime.now().isoformat())
+    )
     conn.commit()
     conn.close()
 
@@ -203,9 +228,11 @@ def get_valid_token(athlete_id):
 
 # ── Strava fetching ───────────────────────────────────────────────────────────
 
-def fetch_and_store(athlete_id, access_token, pages=2):
+def fetch_and_store(athlete_id, access_token, max_pages=None):
+    """Baja el historial del atleta. Sin max_pages pagina hasta vaciar (todo)."""
     new_count = 0
-    for page in range(1, pages + 1):
+    page = 1
+    while max_pages is None or page <= max_pages:
         resp = requests.get(
             "https://www.strava.com/api/v3/athlete/activities",
             headers={"Authorization": f"Bearer {access_token}"},
@@ -236,6 +263,7 @@ def fetch_and_store(athlete_id, access_token, pages=2):
                 new_count += 1
         conn.commit()
         conn.close()
+        page += 1
     return new_count
 
 
@@ -249,10 +277,19 @@ def fetch_and_store_single(athlete_id, activity_id, access_token):
         return 0
     act = resp.json()
     conn = sqlite3.connect(DB_PATH)
+    # UPSERT: inserta si es nueva, actualiza si ya existe (renombrados,
+    # correcciones de distancia/tipo, etc. que llegan como evento 'update').
     conn.execute("""
-        INSERT OR IGNORE INTO activities
+        INSERT INTO activities
             (strava_id, athlete_id, name, type, distance, moving_time, start_date, elevation_gain)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(strava_id) DO UPDATE SET
+            name           = excluded.name,
+            type           = excluded.type,
+            distance       = excluded.distance,
+            moving_time    = excluded.moving_time,
+            start_date     = excluded.start_date,
+            elevation_gain = excluded.elevation_gain
     """, (
         str(act["id"]), str(athlete_id),
         act.get("name", ""),
@@ -266,6 +303,19 @@ def fetch_and_store_single(athlete_id, activity_id, access_token):
     conn.commit()
     conn.close()
     return added
+
+
+def delete_activity(athlete_id, activity_id):
+    """Borra una actividad de la BD (evento 'delete' del webhook)."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "DELETE FROM activities WHERE strava_id=? AND athlete_id=?",
+        (str(activity_id), str(athlete_id))
+    )
+    removed = conn.total_changes
+    conn.commit()
+    conn.close()
+    return removed
 
 
 # ── Stats query ───────────────────────────────────────────────────────────────
@@ -400,8 +450,11 @@ def callback():
     session.permanent = True
     session["athlete_id"] = athlete_id
     session["firstname"]  = firstname
-    # Initial bulk fetch
-    fetch_and_store(athlete_id, data["access_token"], pages=10)
+    # Bulk inicial: baja TODO el historial una sola vez por atleta.
+    # A partir de ahí, el webhook mantiene la BD al día (fetch_and_store_single).
+    if not initial_sync_done(athlete_id):
+        fetch_and_store(athlete_id, data["access_token"])  # todas las páginas
+        mark_initial_sync_done(athlete_id)
     # Issue a per-device token the frontend stores in localStorage for auto-login
     dt = create_device_token(athlete_id)
     return redirect(f"/?dt={dt}")
@@ -526,15 +579,21 @@ def webhook_verify():
 @app.route("/webhook", methods=["POST"])
 def webhook_event():
     data = request.get_json(silent=True) or {}
-    if data.get("object_type") == "activity" and data.get("aspect_type") in ("create", "update"):
+    if data.get("object_type") == "activity":
+        aspect      = data.get("aspect_type")
         athlete_id  = str(data.get("owner_id", ""))
         activity_id = data.get("object_id")
         if athlete_id and activity_id:
-            token = get_valid_token(athlete_id)
-            if token:
-                added = fetch_and_store_single(athlete_id, activity_id, token)
-                if added:
-                    socketio.emit("refresh", {"athlete_id": athlete_id})
+            changed = 0
+            if aspect == "delete":
+                # No necesita token: solo borramos de la BD local.
+                changed = delete_activity(athlete_id, activity_id)
+            elif aspect in ("create", "update"):
+                token = get_valid_token(athlete_id)
+                if token:
+                    changed = fetch_and_store_single(athlete_id, activity_id, token)
+            if changed:
+                socketio.emit("refresh", {"athlete_id": athlete_id})
     return jsonify({"status": "ok"})
 
 
