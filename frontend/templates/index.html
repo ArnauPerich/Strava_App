@@ -122,12 +122,61 @@
   }
 
   /* ── Physics canvas area ── */
-  #bubbles-area {
+  .bubbles-area {
     flex: 1;
     position: relative;
     overflow: hidden;
     touch-action: none;
   }
+
+  /* ── Nutrition: day selector ── */
+  .day-nav {
+    display: flex; align-items: center; justify-content: center;
+    gap: 18px; padding: 12px 24px 4px;
+    flex-shrink: 0;
+  }
+  .day-arrow {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); border-radius: 10px;
+    width: 38px; height: 34px; font-size: 18px; line-height: 1;
+    cursor: pointer; transition: all 0.2s ease;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  }
+  .day-arrow:hover:not(:disabled) { border-color: rgba(255,255,255,0.25); }
+  .day-arrow:disabled { opacity: 0.25; cursor: default; }
+  .day-label {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 30px; letter-spacing: 2px; color: var(--text);
+    min-width: 120px; text-align: center; text-transform: uppercase;
+  }
+
+  /* ── Nutrition: photo button + status ── */
+  .nutri-foot {
+    flex-shrink: 0;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 8px; padding: 6px 24px 18px;
+  }
+  .photo-btn {
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(255,85,51,0.12);
+    border: 1px solid rgba(255,85,51,0.4);
+    color: var(--accent); border-radius: 14px;
+    padding: 14px 26px;
+    font-family: 'Syne', sans-serif;
+    font-size: 13px; font-weight: 800; letter-spacing: 1.5px;
+    text-transform: uppercase; cursor: pointer;
+    transition: all 0.2s ease;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  }
+  .photo-btn:hover { transform: translateY(-1px); background: rgba(255,85,51,0.18); }
+  .photo-btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+  .photo-btn svg { display: block; }
+  .nutri-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.5px; color: var(--muted);
+    min-height: 14px; text-align: center;
+  }
+  .nutri-status.busy { color: var(--accent); }
 
   /* ── Individual bubble ── */
   .bubble {
@@ -457,7 +506,7 @@
 
       <div class="divider"></div>
 
-      <div id="bubbles-area">
+      <div class="bubbles-area" id="bubbles-area">
         <div class="skeleton-wrap">
           <div class="skeleton-bubble" style="width:150px;height:150px"></div>
           <div class="skeleton-bubble" style="width:110px;height:110px;margin-top:30px"></div>
@@ -466,7 +515,36 @@
       </div>
     </section>
 
-    <!-- ── Page 2: voice assistant ── -->
+    <!-- ── Page 2: nutrition ── -->
+    <section class="page" id="page-nutri">
+      <div class="day-nav">
+        <button class="day-arrow" id="nutri-prev" aria-label="Día anterior">‹</button>
+        <div class="day-label" id="nutri-day">Hoy</div>
+        <button class="day-arrow" id="nutri-next" aria-label="Día siguiente">›</button>
+      </div>
+
+      <div class="summary">
+        <div class="summary-label" id="nutri-summary">registro de comida</div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="bubbles-area" id="nutri-bubbles-area"></div>
+
+      <div class="nutri-foot">
+        <input type="file" id="nutri-file" accept="image/*" capture="environment" hidden>
+        <button class="photo-btn" id="nutri-photo">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+          Añadir comida
+        </button>
+        <div class="nutri-status" id="nutri-status">Haz una foto a tu comida</div>
+      </div>
+    </section>
+
+    <!-- ── Page 3: voice assistant ── -->
     <section class="page" id="page-voice">
       <div class="voice-header">
         <div class="voice-title">ASISTENTE</div>
@@ -489,6 +567,7 @@
   <div class="page-dots">
     <span class="dot active" data-page="0"></span>
     <span class="dot" data-page="1"></span>
+    <span class="dot" data-page="2"></span>
   </div>
 
   {% endif %}
@@ -547,7 +626,8 @@ const socket = io({ transports: ['websocket', 'polling'] });
 let currentPeriod = 'week';
 const periodLabels = { week:'total esta semana', month:'total este mes', year:'total este año' };
 
-// ── Physics engine ────────────────────────────────────────────────────────────
+// ── Bubble field factory (una instancia de física independiente por área) ─────
+function makeBubbleField(area) {
 const DAMPING   = 0.92;
 const RESTITUTION = 0.45;
 const CENTER_PULL = 0.006;
@@ -557,13 +637,12 @@ let rafId = null;
 let areaW = 0, areaH = 0;
 
 function measureArea() {
-  const area = document.getElementById('bubbles-area');
   areaW = area.offsetWidth;
   areaH = area.offsetHeight;
 }
 
 function toLocal(clientX, clientY) {
-  const rect = document.getElementById('bubbles-area').getBoundingClientRect();
+  const rect = area.getBoundingClientRect();
   return { x: clientX - rect.left, y: clientY - rect.top };
 }
 
@@ -697,10 +776,10 @@ function setupDrag(b) {
 }
 
 // ── Render bubbles ────────────────────────────────────────────────────────────
-function bubbleSize(km, maxKm) {
-  if (maxKm === 0) return 58;
+function bubbleSize(weight) {
   const minR = 36, maxR = 78;
-  return Math.round(minR + Math.pow(km/maxKm, 0.5) * (maxR - minR));
+  const w = Math.max(0, Math.min(1, weight));
+  return Math.round(minR + Math.sqrt(w) * (maxR - minR));
 }
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -725,25 +804,24 @@ function packPositions(bubbles, W, H) {
   }
 }
 
-function renderBubbles(activities) {
+// items: [{ label, value, unit, color, weight }]  (weight 0..1 → tamaño)
+function render(items, emptyHtml) {
   stopPhysics();
   physBubbles = [];
-  const area = document.getElementById('bubbles-area');
   measureArea();
 
-  if (!activities.length) {
-    area.innerHTML = `<div class="empty-msg"><div class="empty-icon">🏃</div>No hay actividades en este período.<br>¡A moverse!</div>`;
+  if (!items.length) {
+    area.innerHTML = emptyHtml || '';
     return;
   }
 
   area.innerHTML = '';
-  const maxKm = activities[0].km;
 
-  const bData = activities.map((act, i) => {
-    const r = bubbleSize(act.km, maxKm);
+  const bData = items.map((it, i) => {
+    const r = bubbleSize(it.weight);
 
     // text scales with radius
-    const kmFs   = clamp(r * 0.58, 16, 52);
+    const valFs  = clamp(r * 0.52, 15, 46);
     const typeFs = clamp(r * 0.115, 5.5, 8.5);
     const pad    = Math.round(r * 0.16);
     const showType = r >= 30;             // tiny bubbles: number only
@@ -752,16 +830,16 @@ function renderBubbles(activities) {
     el.className = 'bubble';
     el.style.cssText = `width:${r*2}px;height:${r*2}px;left:0;top:0;`;
     el.innerHTML = `
-      <div class="bubble-glow-inner" style="background:${act.color};animation-delay:${i*0.6}s"></div>
+      <div class="bubble-glow-inner" style="background:${it.color};animation-delay:${i*0.6}s"></div>
       <div class="bubble-bg"></div>
       <div class="bubble-shine"></div>
-      <div class="bubble-ring" style="border-color:${act.color}"></div>
-      <div class="bubble-ring2" style="border-color:${act.color}"></div>
+      <div class="bubble-ring" style="border-color:${it.color}"></div>
+      <div class="bubble-ring2" style="border-color:${it.color}"></div>
       <div class="bubble-content" style="padding:${pad}px">
-        <div class="bubble-km" style="font-size:${kmFs}px;color:${act.color}">
-          ${act.km}<span class="km-unit">km</span>
+        <div class="bubble-km" style="font-size:${valFs}px;color:${it.color}">
+          ${it.value}<span class="km-unit">${it.unit}</span>
         </div>
-        ${showType ? `<div class="bubble-type" style="color:${act.color};font-size:${typeFs}px">${act.label}</div>` : ``}
+        ${showType ? `<div class="bubble-type" style="color:${it.color};font-size:${typeFs}px">${it.label}</div>` : ``}
       </div>`;
     area.appendChild(el);
     return { el, r, x: r, y: r, vx: (Math.random()-0.5)*1.5, vy: -Math.random()*2, dragging: false };
@@ -778,6 +856,21 @@ function renderBubbles(activities) {
   startPhysics();
 }
 
+function reflow() {
+  measureArea();
+  if (physBubbles.length) {
+    packPositions(physBubbles, areaW, areaH);
+    physBubbles.forEach(b => { b.vx = 0; b.vy = 0; });
+  }
+}
+
+return { render, reflow };
+}
+
+// Dos campos de burbujas independientes: actividad y nutrición.
+const statsField = makeBubbleField(document.getElementById('bubbles-area'));
+const nutriField = makeBubbleField(document.getElementById('nutri-bubbles-area'));
+
 // ── Stats fetch ───────────────────────────────────────────────────────────────
 async function loadStats(period) {
   setStatus('syncing', 'actualizando...');
@@ -786,7 +879,14 @@ async function loadStats(period) {
     const data = await res.json();
     document.getElementById('total-km').innerHTML = `${data.total_km}<span class="unit">km</span>`;
     document.getElementById('summary-label').textContent = periodLabels[period];
-    renderBubbles(data.activities || []);
+    const acts = data.activities || [];
+    const maxKm = acts.length ? acts[0].km : 0;
+    const items = acts.map(a => ({
+      label: a.label, value: a.km, unit: 'km', color: a.color,
+      weight: maxKm ? a.km / maxKm : 0,
+    }));
+    const empty = `<div class="empty-msg"><div class="empty-icon">🏃</div>No hay actividades en este período.<br>¡A moverse!</div>`;
+    statsField.render(items, empty);
     setStatus('live', `sync ${new Date().toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})}`);
   } catch(e) {
     setStatus('', 'error');
@@ -810,17 +910,10 @@ document.querySelectorAll('.tab').forEach(btn => {
   });
 });
 
-// ── Repack on resize ──────────────────────────────────────────────────────────
 // ── Re-measure & reflow on resize / orientation change ────────────────────────
-function reflow() {
-  measureArea();
-  if (physBubbles.length) {
-    packPositions(physBubbles, areaW, areaH);
-    physBubbles.forEach(b => { b.vx = 0; b.vy = 0; });
-  }
-}
-window.addEventListener('resize', reflow);
-window.addEventListener('orientationchange', () => setTimeout(reflow, 250));
+function reflowAll() { statsField.reflow(); nutriField.reflow(); }
+window.addEventListener('resize', reflowAll);
+window.addEventListener('orientationchange', () => setTimeout(reflowAll, 250));
 
 // ── Socket ────────────────────────────────────────────────────────────────────
 socket.on('connect', () => loadStats(currentPeriod));
@@ -848,6 +941,106 @@ if (logoutBtn) {
 }
 
 loadStats(currentPeriod);
+
+// ── Nutrition stream (day picker + photo → visión → registro) ─────────────────
+(function nutrition(){
+  const dayLabelEl = document.getElementById('nutri-day');
+  const summaryEl  = document.getElementById('nutri-summary');
+  const statusEl   = document.getElementById('nutri-status');
+  const prevBtn    = document.getElementById('nutri-prev');
+  const nextBtn    = document.getElementById('nutri-next');
+  const photoBtn   = document.getElementById('nutri-photo');
+  const fileInput  = document.getElementById('nutri-file');
+  if (!dayLabelEl) return;
+
+  const isoOf = d => d.getFullYear() + '-' +
+    String(d.getMonth()+1).padStart(2,'0') + '-' +
+    String(d.getDate()).padStart(2,'0');
+  const todayIso = () => isoOf(new Date());
+
+  let day = todayIso();
+
+  function label(iso){
+    const t = todayIso();
+    const y = isoOf(new Date(Date.now() - 86400000));
+    if (iso === t) return 'Hoy';
+    if (iso === y) return 'Ayer';
+    const [Y, M, D] = iso.split('-');
+    return `${D}/${M}`;
+  }
+
+  function setStatus(text, busy){
+    statusEl.textContent = text;
+    statusEl.classList.toggle('busy', !!busy);
+  }
+
+  function renderDay(data){
+    const count = data.count || 0;
+    summaryEl.textContent = count
+      ? `${count} ${count === 1 ? 'alimento' : 'alimentos'} registrados`
+      : 'registro de comida';
+    const empty = `<div class="empty-msg"><div class="empty-icon">🍽️</div>Sin comidas este día.<br>Añade una foto para empezar.</div>`;
+    if (!count){ nutriField.render([], empty); return; }
+    const items = (data.bubbles || []).map(b => ({
+      label: b.label, value: b.value, unit: b.unit, color: b.color, weight: b.weight,
+    }));
+    nutriField.render(items, empty);
+  }
+
+  async function load(){
+    dayLabelEl.textContent = label(day);
+    nextBtn.disabled = day >= todayIso();
+    try {
+      const res  = await fetch('/api/nutrition?day=' + day);
+      const data = await res.json();
+      renderDay(data);
+    } catch(e){ /* silencioso */ }
+  }
+
+  function shift(n){
+    const d = new Date(day + 'T12:00:00');
+    d.setDate(d.getDate() + n);
+    const iso = isoOf(d);
+    if (iso > todayIso()) return;   // sin futuro
+    day = iso;
+    load();
+  }
+
+  prevBtn.addEventListener('click', () => shift(-1));
+  nextBtn.addEventListener('click', () => shift(1));
+  photoBtn.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', async () => {
+    const f = fileInput.files && fileInput.files[0];
+    if (!f) return;
+    photoBtn.disabled = true;
+    setStatus('analizando foto…', true);
+    const fd = new FormData();
+    fd.append('photo', f);
+    fd.append('day', day);
+    try {
+      const res  = await fetch('/api/nutrition/photo', { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok){
+        const msg = data.error === 'no_food'       ? 'No reconocí comida en la foto'
+                  : data.error === 'no_api_key'    ? 'Falta configurar la API'
+                  : data.error === 'vision_failed' ? 'No pude analizar la foto'
+                  : 'Algo ha fallado, reinténtalo';
+        setStatus(msg, false);
+      } else {
+        renderDay(data);
+        const a = data.added;
+        setStatus(a && a.name ? `Añadido: ${a.name} · ${a.kcal} kcal` : 'Añadido', false);
+      }
+    } catch(e){
+      setStatus('Sin conexión', false);
+    }
+    fileInput.value = '';
+    photoBtn.disabled = false;
+  });
+
+  load();
+})();
 
 // ── Pager navigation (swipe + dots) ───────────────────────────────────────────
 (function pagerNav(){

@@ -54,6 +54,20 @@ def init_db():
             synced_at   TEXT
         )
     """)
+    # Stream nutrición: un registro por alimento añadido a un día concreto.
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS food_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id  TEXT,
+            day         TEXT,
+            name        TEXT,
+            kcal        REAL,
+            protein     REAL,
+            carbs       REAL,
+            created_at  TEXT
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_food_athlete_day ON food_log(athlete_id, day)")
     conn.commit()
     conn.close()
 
