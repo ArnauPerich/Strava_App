@@ -44,6 +44,18 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 
 socketio.init_app(app)
 
+# ── Logging ───────────────────────────────────────────────────────────────────
+# Hacemos que app.logger emita a nivel INFO (incluidas las llamadas a tools del
+# asistente). Bajo gunicorn reutilizamos sus handlers para que todo acabe en
+# /var/log/strava-app/error.log; en local (python app.py) usamos la consola.
+_gunicorn_logger = logging.getLogger("gunicorn.error")
+if _gunicorn_logger.handlers:
+    app.logger.handlers = _gunicorn_logger.handlers
+    app.logger.setLevel(_gunicorn_logger.level or logging.INFO)
+else:
+    logging.basicConfig(level=logging.INFO)
+    app.logger.setLevel(logging.INFO)
+
 # ── Streams ───────────────────────────────────────────────────────────────────
 app.register_blueprint(auth_bp)
 app.register_blueprint(webhook_bp)
