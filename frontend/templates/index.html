@@ -1010,13 +1010,34 @@ loadStats(currentPeriod);
   nextBtn.addEventListener('click', () => shift(1));
   photoBtn.addEventListener('click', () => fileInput.click());
 
+  // Reescala la foto a JPEG (máx 1280px) para no chocar con límites de subida
+  // y acelerar la visión. Si algo falla, devuelve el archivo original.
+  function downscale(file, maxDim, quality){
+    return new Promise(resolve => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        canvas.toBlob(b => resolve(b || file), 'image/jpeg', quality);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+      img.src = url;
+    });
+  }
+
   fileInput.addEventListener('change', async () => {
     const f = fileInput.files && fileInput.files[0];
     if (!f) return;
     photoBtn.disabled = true;
     setStatus('analizando foto…', true);
+    const blob = await downscale(f, 1280, 0.82);
     const fd = new FormData();
-    fd.append('photo', f);
+    fd.append('photo', blob, 'food.jpg');
     fd.append('day', day);
     try {
       const res  = await fetch('/api/nutrition/photo', { method: 'POST', body: fd });
@@ -1025,7 +1046,7 @@ loadStats(currentPeriod);
         const msg = data.error === 'no_food'       ? 'No reconocí comida en la foto'
                   : data.error === 'no_api_key'    ? 'Falta configurar la API'
                   : data.error === 'vision_failed' ? 'No pude analizar la foto'
-                  : 'Algo ha fallado, reinténtalo';
+                  : `Error al subir (${res.status})`;
         setStatus(msg, false);
       } else {
         renderDay(data);
