@@ -177,6 +177,77 @@
     min-height: 14px; text-align: center;
   }
   .nutri-status.busy { color: var(--accent); }
+  .log-btn {
+    background: none; border: 1px solid var(--border);
+    color: var(--muted); border-radius: 10px;
+    padding: 8px 18px;
+    font-family: 'Syne', sans-serif;
+    font-size: 11px; font-weight: 700; letter-spacing: 1.5px;
+    text-transform: uppercase; cursor: pointer;
+    transition: all 0.2s ease; -webkit-tap-highlight-color: transparent;
+  }
+  .log-btn:not(:disabled):hover { color: var(--text); border-color: rgba(255,255,255,0.22); }
+  .log-btn:disabled { opacity: 0.4; cursor: default; }
+
+  /* ── Bottom sheet (editable food log) ── */
+  .sheet {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: flex-end; justify-content: center;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  }
+  .sheet[hidden] { display: none; }
+  .sheet-panel {
+    width: 100%; max-width: 520px;
+    max-height: 78vh; display: flex; flex-direction: column;
+    background: #101010; border: 1px solid var(--border);
+    border-radius: 20px 20px 0 0;
+    padding: 18px 18px calc(18px + var(--safe-bot));
+    animation: sheetUp 0.25s ease;
+  }
+  @keyframes sheetUp { from { transform: translateY(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .sheet-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 14px; flex-shrink: 0;
+  }
+  .sheet-title { font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 2px; }
+  .sheet-close {
+    background: none; border: none; color: var(--muted);
+    font-size: 18px; cursor: pointer; padding: 4px 8px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sheet-list { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  .sheet-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 26px 0; }
+
+  .food-row {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px;
+  }
+  .food-name {
+    flex: 1 1 auto; min-width: 0;
+    font-size: 12px; font-weight: 600; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .food-fields { display: flex; gap: 6px; flex-shrink: 0; }
+  .food-field { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .food-field span { font-size: 8px; letter-spacing: 0.5px; color: var(--muted); text-transform: uppercase; }
+  .food-field input {
+    width: 48px; text-align: center;
+    background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text);
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 6px 3px;
+    -moz-appearance: textfield;
+  }
+  .food-field input::-webkit-outer-spin-button,
+  .food-field input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .food-field input:focus { outline: none; border-color: rgba(255,85,51,0.5); }
+  .food-del {
+    flex-shrink: 0; background: none; border: none; color: var(--muted);
+    font-size: 15px; cursor: pointer; padding: 4px 6px; line-height: 1;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .food-del:hover { color: var(--accent); }
 
   /* ── Individual bubble ── */
   .bubble {
@@ -540,6 +611,7 @@
           </svg>
           Añadir comida
         </button>
+        <button class="log-btn" id="nutri-log-btn" disabled>Registro · 0</button>
         <div class="nutri-status" id="nutri-status">Haz una foto a tu comida</div>
       </div>
     </section>
@@ -568,6 +640,17 @@
     <span class="dot active" data-page="0"></span>
     <span class="dot" data-page="1"></span>
     <span class="dot" data-page="2"></span>
+  </div>
+
+  <!-- ── Nutrition: editable food log (bottom sheet) ── -->
+  <div class="sheet" id="nutri-sheet" hidden>
+    <div class="sheet-panel">
+      <div class="sheet-head">
+        <div class="sheet-title">Registro · <span id="sheet-day"></span></div>
+        <button class="sheet-close" id="sheet-close" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sheet-list" id="sheet-list"></div>
+    </div>
   </div>
 
   {% endif %}
@@ -627,7 +710,9 @@ let currentPeriod = 'week';
 const periodLabels = { week:'total esta semana', month:'total este mes', year:'total este año' };
 
 // ── Bubble field factory (una instancia de física independiente por área) ─────
-function makeBubbleField(area) {
+function makeBubbleField(area, opts) {
+const minR = (opts && opts.minR) || 36;
+const maxR = (opts && opts.maxR) || 78;
 const DAMPING   = 0.92;
 const RESTITUTION = 0.45;
 const CENTER_PULL = 0.006;
@@ -777,7 +862,6 @@ function setupDrag(b) {
 
 // ── Render bubbles ────────────────────────────────────────────────────────────
 function bubbleSize(weight) {
-  const minR = 36, maxR = 78;
   const w = Math.max(0, Math.min(1, weight));
   return Math.round(minR + Math.sqrt(w) * (maxR - minR));
 }
@@ -822,7 +906,7 @@ function render(items, emptyHtml) {
 
     // text scales with radius
     const valFs  = clamp(r * 0.52, 15, 46);
-    const typeFs = clamp(r * 0.115, 5.5, 8.5);
+    const typeFs = clamp(r * 0.125, 6, 10);
     const pad    = Math.round(r * 0.16);
     const showType = r >= 30;             // tiny bubbles: number only
 
@@ -868,8 +952,9 @@ return { render, reflow };
 }
 
 // Dos campos de burbujas independientes: actividad y nutrición.
+// Nutrición usa un radio mínimo mayor para que quepan etiquetas como "Proteína".
 const statsField = makeBubbleField(document.getElementById('bubbles-area'));
-const nutriField = makeBubbleField(document.getElementById('nutri-bubbles-area'));
+const nutriField = makeBubbleField(document.getElementById('nutri-bubbles-area'), { minR: 58, maxR: 94 });
 
 // ── Stats fetch ───────────────────────────────────────────────────────────────
 async function loadStats(period) {
@@ -951,7 +1036,19 @@ loadStats(currentPeriod);
   const nextBtn    = document.getElementById('nutri-next');
   const photoBtn   = document.getElementById('nutri-photo');
   const fileInput  = document.getElementById('nutri-file');
+  const logBtn     = document.getElementById('nutri-log-btn');
+  const sheet      = document.getElementById('nutri-sheet');
+  const sheetList  = document.getElementById('sheet-list');
+  const sheetDay   = document.getElementById('sheet-day');
+  const sheetClose = document.getElementById('sheet-close');
   if (!dayLabelEl) return;
+
+  let current = null;   // último get_day cargado (para la hoja de registro)
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
 
   const isoOf = d => d.getFullYear() + '-' +
     String(d.getMonth()+1).padStart(2,'0') + '-' +
@@ -975,17 +1072,79 @@ loadStats(currentPeriod);
   }
 
   function renderDay(data){
+    current = data;
     const count = data.count || 0;
     summaryEl.textContent = count
       ? `${count} ${count === 1 ? 'alimento' : 'alimentos'} registrados`
       : 'registro de comida';
+    logBtn.textContent = `Registro · ${count}`;
+    logBtn.disabled = !count;
     const empty = `<div class="empty-msg"><div class="empty-icon">🍽️</div>Sin comidas este día.<br>Añade una foto para empezar.</div>`;
-    if (!count){ nutriField.render([], empty); return; }
-    const items = (data.bubbles || []).map(b => ({
-      label: b.label, value: b.value, unit: b.unit, color: b.color, weight: b.weight,
-    }));
-    nutriField.render(items, empty);
+    if (!count){ nutriField.render([], empty); }
+    else {
+      const items = (data.bubbles || []).map(b => ({
+        label: b.label, value: b.value, unit: b.unit, color: b.color, weight: b.weight,
+      }));
+      nutriField.render(items, empty);
+    }
+    if (!sheet.hidden) renderSheet();   // mantener la hoja sincronizada si está abierta
   }
+
+  // ── Hoja de registro: lista editable de alimentos ──
+  function renderSheet(){
+    const entries = (current && current.entries) || [];
+    if (!entries.length){
+      sheetList.innerHTML = `<div class="sheet-empty">Sin alimentos este día.</div>`;
+      return;
+    }
+    sheetList.innerHTML = '';
+    entries.forEach(e => {
+      const row = document.createElement('div');
+      row.className = 'food-row';
+      row.innerHTML = `
+        <div class="food-name">${escapeHtml(e.name || 'Comida')}</div>
+        <div class="food-fields">
+          <label class="food-field"><span>kcal</span><input type="number" inputmode="numeric" data-f="kcal" value="${e.kcal}"></label>
+          <label class="food-field"><span>prot</span><input type="number" inputmode="numeric" data-f="protein" value="${e.protein}"></label>
+          <label class="food-field"><span>carb</span><input type="number" inputmode="numeric" data-f="carbs" value="${e.carbs}"></label>
+        </div>
+        <button class="food-del" aria-label="Eliminar">✕</button>`;
+      row.querySelectorAll('input').forEach(inp =>
+        inp.addEventListener('change', () => saveRow(e.id, row)));
+      row.querySelector('.food-del').addEventListener('click', () => post('/api/nutrition/entry/delete', { id: e.id, day }));
+      sheetList.appendChild(row);
+    });
+  }
+
+  function saveRow(id, row){
+    const vals = { id, day };
+    row.querySelectorAll('input').forEach(i => { vals[i.dataset.f] = parseFloat(i.value) || 0; });
+    post('/api/nutrition/entry/update', vals);
+  }
+
+  async function post(url, body){
+    try {
+      const res  = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      renderDay(data);   // refresca burbujas, resumen y la hoja
+    } catch(e){ setStatus('Error guardando', false); }
+  }
+
+  function openSheet(){
+    if (!current || !current.count) return;
+    sheetDay.textContent = label(day);
+    renderSheet();
+    sheet.hidden = false;
+  }
+  function closeSheet(){ sheet.hidden = true; }
+
+  logBtn.addEventListener('click', openSheet);
+  sheetClose.addEventListener('click', closeSheet);
+  sheet.addEventListener('click', e => { if (e.target === sheet) closeSheet(); });
 
   async function load(){
     dayLabelEl.textContent = label(day);

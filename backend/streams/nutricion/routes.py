@@ -65,6 +65,21 @@ def api_nutrition_photo():
     return jsonify(result)
 
 
+@nutricion_bp.route("/api/nutrition/entry/update", methods=["POST"])
+def api_nutrition_update():
+    athlete_id, err = _athlete_or_401()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    entry_id = body.get("id")
+    day = body.get("day") if _DAY_RE.match(str(body.get("day", ""))) else service.today_str()
+    if entry_id is None:
+        return jsonify({"error": "no_id"}), 400
+    service.update_entry(athlete_id, entry_id,
+                         body.get("kcal"), body.get("protein"), body.get("carbs"))
+    return jsonify(service.get_day(athlete_id, day))
+
+
 @nutricion_bp.route("/api/nutrition/entry/delete", methods=["POST"])
 def api_nutrition_delete():
     athlete_id, err = _athlete_or_401()
@@ -72,9 +87,7 @@ def api_nutrition_delete():
         return err
     body = request.get_json(silent=True) or {}
     entry_id = body.get("id")
-    day = body.get("day") or service.today_str()
-    if not _DAY_RE.match(day):
-        day = service.today_str()
+    day = body.get("day") if _DAY_RE.match(str(body.get("day", ""))) else service.today_str()
     if entry_id is None:
         return jsonify({"error": "no_id"}), 400
     service.delete_entry(athlete_id, entry_id)

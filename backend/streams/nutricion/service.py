@@ -98,6 +98,18 @@ def add_entry(athlete_id, day, name, kcal, protein, carbs):
     return entry_id
 
 
+def update_entry(athlete_id, entry_id, kcal, protein, carbs):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        UPDATE food_log SET kcal=?, protein=?, carbs=?
+        WHERE id=? AND athlete_id=?
+    """, (_num(kcal), _num(protein), _num(carbs), entry_id, str(athlete_id)))
+    changed = conn.total_changes
+    conn.commit()
+    conn.close()
+    return changed
+
+
 def delete_entry(athlete_id, entry_id):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM food_log WHERE id=? AND athlete_id=?", (entry_id, str(athlete_id)))
