@@ -55,21 +55,49 @@ def init_db():
         )
     """)
     # Stream nutrición: un registro por alimento añadido a un día concreto.
+    # `grams` = ración estimada/ajustada; `fat` completa los macros principales.
     c.execute("""
         CREATE TABLE IF NOT EXISTS food_log (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             athlete_id  TEXT,
             day         TEXT,
             name        TEXT,
+            grams       REAL,
             kcal        REAL,
             protein     REAL,
             carbs       REAL,
+            fat         REAL,
             created_at  TEXT
         )
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_food_athlete_day ON food_log(athlete_id, day)")
+
+    # Caché de valores nutricionales por 100 g (Open Food Facts u otra fuente),
+    # para no repetir búsquedas del mismo alimento. `key` = nombre normalizado.
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS food_cache (
+            key         TEXT PRIMARY KEY,
+            name        TEXT,
+            kcal_100    REAL,
+            protein_100 REAL,
+            carbs_100   REAL,
+            fat_100     REAL,
+            source      TEXT,
+            created_at  TEXT
+        )
+    """)
+
+    _migrate_food_log(c)
     conn.commit()
     conn.close()
+
+
+def _migrate_food_log(cursor):
+    """Añade columnas nuevas a `food_log` en bases de datos ya existentes."""
+    cols = {row[1] for row in cursor.execute("PRAGMA table_info(food_log)").fetchall()}
+    for name, decl in (("grams", "REAL"), ("fat", "REAL")):
+        if name not in cols:
+            cursor.execute(f"ALTER TABLE food_log ADD COLUMN {name} {decl}")
 
 
 # ── Estado de sincronización inicial ──────────────────────────────────────────

@@ -229,11 +229,11 @@
     font-size: 12px; font-weight: 600; color: var(--text);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .food-fields { display: flex; gap: 6px; flex-shrink: 0; }
+  .food-fields { display: flex; gap: 5px; flex-shrink: 0; }
   .food-field { display: flex; flex-direction: column; align-items: center; gap: 3px; }
   .food-field span { font-size: 8px; letter-spacing: 0.5px; color: var(--muted); text-transform: uppercase; }
   .food-field input {
-    width: 56px; text-align: center;
+    width: 46px; text-align: center;
     background: rgba(0,0,0,0.3); border: 1px solid var(--border);
     border-radius: 8px; color: var(--text);
     /* font-size 16px evita el zoom automático de iOS Safari al enfocar el input */
@@ -243,12 +243,50 @@
   .food-field input::-webkit-outer-spin-button,
   .food-field input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   .food-field input:focus { outline: none; border-color: rgba(255,85,51,0.5); }
+  .food-grams { font-size: 9px; color: var(--muted); font-weight: 400; }
   .food-del {
     flex-shrink: 0; background: none; border: none; color: var(--muted);
     font-size: 15px; cursor: pointer; padding: 4px 6px; line-height: 1;
     -webkit-tap-highlight-color: transparent;
   }
   .food-del:hover { color: var(--accent); }
+
+  /* ── Review sheet: alimentos detectados por la foto, antes de confirmar ── */
+  .rev-row {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px;
+  }
+  .rev-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .rev-name { font-size: 12px; font-weight: 600; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rev-macros { font-size: 10px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+  .rev-src { font-size: 8px; letter-spacing: 0.5px; text-transform: uppercase; }
+  .rev-src.real { color: #34d399; }
+  .rev-src.est  { color: #fbbf24; }
+  .rev-grams { display: flex; flex-direction: column; align-items: center; gap: 3px; flex-shrink: 0; }
+  .rev-grams span { font-size: 8px; letter-spacing: 0.5px; color: var(--muted); text-transform: uppercase; }
+  .rev-grams input {
+    width: 58px; text-align: center;
+    background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text);
+    font-family: 'JetBrains Mono', monospace; font-size: 16px; padding: 6px 2px;
+    -moz-appearance: textfield;
+  }
+  .rev-grams input::-webkit-outer-spin-button,
+  .rev-grams input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .rev-grams input:focus { outline: none; border-color: rgba(255,85,51,0.5); }
+  .rev-confirm {
+    margin-top: 14px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; padding: 13px; border: none; border-radius: 12px;
+    background: var(--accent); color: #fff; cursor: pointer;
+    font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 1.5px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .rev-confirm:disabled { opacity: 0.5; cursor: default; }
+  .rev-total { font-size: 11px; color: var(--muted); text-align: center; margin-top: 10px;
+    font-family: 'JetBrains Mono', monospace; }
 
   /* ── Individual bubble ── */
   .bubble {
@@ -654,6 +692,19 @@
     </div>
   </div>
 
+  <!-- ── Nutrition: review of detected foods before saving (bottom sheet) ── -->
+  <div class="sheet" id="nutri-review" hidden>
+    <div class="sheet-panel">
+      <div class="sheet-head">
+        <div class="sheet-title">Revisa y ajusta</div>
+        <button class="sheet-close" id="review-close" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sheet-list" id="review-list"></div>
+      <div class="rev-total" id="review-total"></div>
+      <button class="rev-confirm" id="review-confirm">Registrar</button>
+    </div>
+  </div>
+
   {% endif %}
 
 </div>
@@ -1042,9 +1093,15 @@ loadStats(currentPeriod);
   const sheetList  = document.getElementById('sheet-list');
   const sheetDay   = document.getElementById('sheet-day');
   const sheetClose = document.getElementById('sheet-close');
+  const review     = document.getElementById('nutri-review');
+  const reviewList = document.getElementById('review-list');
+  const reviewTotal= document.getElementById('review-total');
+  const reviewOk   = document.getElementById('review-confirm');
+  const reviewClose= document.getElementById('review-close');
   if (!dayLabelEl) return;
 
   let current = null;   // último get_day cargado (para la hoja de registro)
+  let pending = [];     // alimentos detectados por la foto, pendientes de confirmar
 
   function escapeHtml(s){
     return String(s).replace(/[&<>"']/g, c =>
@@ -1102,12 +1159,14 @@ loadStats(currentPeriod);
     entries.forEach(e => {
       const row = document.createElement('div');
       row.className = 'food-row';
+      const grams = e.grams ? ` <span class="food-grams">${e.grams} g</span>` : '';
       row.innerHTML = `
-        <div class="food-name">${escapeHtml(e.name || 'Comida')}</div>
+        <div class="food-name">${escapeHtml(e.name || 'Comida')}${grams}</div>
         <div class="food-fields">
           <label class="food-field"><span>kcal</span><input type="number" inputmode="numeric" data-f="kcal" value="${e.kcal}"></label>
           <label class="food-field"><span>prot</span><input type="number" inputmode="numeric" data-f="protein" value="${e.protein}"></label>
           <label class="food-field"><span>carb</span><input type="number" inputmode="numeric" data-f="carbs" value="${e.carbs}"></label>
+          <label class="food-field"><span>gras</span><input type="number" inputmode="numeric" data-f="fat" value="${e.fat}"></label>
         </div>
         <button class="food-del" aria-label="Eliminar">✕</button>`;
       row.querySelectorAll('input').forEach(inp =>
@@ -1146,6 +1205,98 @@ loadStats(currentPeriod);
   logBtn.addEventListener('click', openSheet);
   sheetClose.addEventListener('click', closeSheet);
   sheet.addEventListener('click', e => { if (e.target === sheet) closeSheet(); });
+
+  // ── Review sheet: alimentos detectados por la foto, ajustables antes de guardar ──
+  const round = n => Math.round(Number(n) || 0);
+
+  function recalc(it){
+    const f = (Number(it.grams) || 0) / 100;
+    const p = it.per100 || {};
+    it.kcal    = (Number(p.kcal)    || 0) * f;
+    it.protein = (Number(p.protein) || 0) * f;
+    it.carbs   = (Number(p.carbs)   || 0) * f;
+    it.fat     = (Number(p.fat)     || 0) * f;
+  }
+
+  function reviewTotals(){
+    return pending.reduce((t, it) => {
+      t.kcal += it.kcal; t.protein += it.protein; t.carbs += it.carbs; t.fat += it.fat; return t;
+    }, { kcal: 0, protein: 0, carbs: 0, fat: 0 });
+  }
+
+  function renderReview(){
+    reviewList.innerHTML = '';
+    pending.forEach((it, idx) => {
+      const real = it.source && it.source !== 'estimate';
+      const row = document.createElement('div');
+      row.className = 'rev-row';
+      row.innerHTML = `
+        <div class="rev-main">
+          <div class="rev-name">${escapeHtml(it.name || 'Comida')}</div>
+          <div class="rev-macros" data-macros>${round(it.kcal)} kcal · P ${round(it.protein)} · C ${round(it.carbs)} · G ${round(it.fat)}</div>
+          <div class="rev-src ${real ? 'real' : 'est'}">${real ? 'datos reales' : 'estimado'}</div>
+        </div>
+        <label class="rev-grams"><span>gramos</span><input type="number" inputmode="numeric" min="0" value="${round(it.grams)}"></label>
+        <button class="food-del" aria-label="Quitar">✕</button>`;
+      const macrosEl = row.querySelector('[data-macros]');
+      row.querySelector('input').addEventListener('input', e => {
+        it.grams = parseFloat(e.target.value) || 0;
+        recalc(it);
+        macrosEl.textContent = `${round(it.kcal)} kcal · P ${round(it.protein)} · C ${round(it.carbs)} · G ${round(it.fat)}`;
+        updateReviewTotal();
+      });
+      row.querySelector('.food-del').addEventListener('click', () => {
+        pending.splice(idx, 1);
+        renderReview();
+      });
+      reviewList.appendChild(row);
+    });
+    updateReviewTotal();
+  }
+
+  function updateReviewTotal(){
+    const t = reviewTotals();
+    reviewTotal.textContent = pending.length
+      ? `Total: ${round(t.kcal)} kcal · ${round(t.protein)} g prot · ${round(t.carbs)} g carb · ${round(t.fat)} g gras`
+      : 'No queda ningún alimento';
+    reviewOk.disabled = !pending.length;
+  }
+
+  function openReview(items){
+    pending = (items || []).map(it => ({ ...it, per100: it.per100 || {} }));
+    pending.forEach(recalc);
+    renderReview();
+    review.hidden = false;
+  }
+  function closeReview(){ review.hidden = true; pending = []; }
+
+  async function confirmReview(){
+    if (!pending.length) return;
+    reviewOk.disabled = true;
+    const items = pending.map(it => ({
+      name: it.name, grams: round(it.grams),
+      kcal: it.kcal, protein: it.protein, carbs: it.carbs, fat: it.fat,
+    }));
+    try {
+      const res  = await fetch('/api/nutrition/photo/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ day, items }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'confirm');
+      closeReview();
+      renderDay(data);
+      setStatus(`Añadido${items.length > 1 ? 's ' + items.length + ' alimentos' : ': ' + items[0].name}`, false);
+    } catch(e){
+      reviewOk.disabled = false;
+      setStatus('Error guardando', false);
+    }
+  }
+
+  reviewClose.addEventListener('click', closeReview);
+  reviewOk.addEventListener('click', confirmReview);
+  review.addEventListener('click', e => { if (e.target === review) closeReview(); });
 
   async function load(){
     dayLabelEl.textContent = label(day);
@@ -1209,9 +1360,10 @@ loadStats(currentPeriod);
                   : `Error al subir (${res.status})`;
         setStatus(msg, false);
       } else {
-        renderDay(data);
-        const a = data.added;
-        setStatus(a && a.name ? `Añadido: ${a.name} · ${a.kcal} kcal` : 'Añadido', false);
+        const items = data.detected || [];
+        const n = items.length;
+        setStatus(n ? `${n} ${n === 1 ? 'alimento detectado' : 'alimentos detectados'} · revisa` : 'Sin comida', false);
+        if (n) openReview(items);
       }
     } catch(e){
       setStatus('Sin conexión', false);
