@@ -101,9 +101,20 @@ def _vars(g, label):
     }
 
 
-def _pick(category, fmt):
-    """Elige una variante al azar de la categoría y la rellena."""
-    title, body = random.choice(MESSAGES[category])
+# Etiqueta de estado que se añade al final del título, según la categoría.
+_STATUS = {
+    "done": "COMPLETED",
+    "progress": "PROGRESSED",
+    "deadline": "ENDING",
+    "fail": "FAILED",
+}
+
+
+def _pick(category, fmt, label, date_label):
+    """Elige una variante al azar, rellena el cuerpo y compone el título:
+    «{frase} · {NOMBRE} {FECHA} {ESTADO}». Devuelve (title, body)."""
+    base, body = random.choice(MESSAGES[category])
+    title = f"{base} · {label.upper()} {date_label.upper()} {_STATUS[category]}"
     return title, body.format(**fmt)
 
 
@@ -142,10 +153,10 @@ def _current_goals(conn, athlete_id):
         if ptype not in PERIODS:
             continue
         if ptype not in cache:
-            start, end, *_rest, cur = resolve_period(ptype, "")
+            start, end, plabel, _p, _n, cur = resolve_period(ptype, "")
             actual = _actual_by_type(conn, athlete_id, start, end)
-            cache[ptype] = (start, end, cur, actual)
-        start, end, cur, actual = cache[ptype]
+            cache[ptype] = (start, end, cur, actual, plabel)
+        start, end, cur, actual, plabel = cache[ptype]
         if pkey != cur:                 # objetivo de otra semana/mes/año: no avisar
             continue
         types = [t for t in (types_str or "").split(",") if t]
@@ -159,7 +170,7 @@ def _current_goals(conn, athlete_id):
             "id": gid, "level": level, "name": name, "types": types,
             "target": round(target, 1), "actual": a, "pct": pct,
             "last_pct": last_pct or 0, "sent": _sent_set(sent),
-            "time_left": time_left, "period": ptype,
+            "time_left": time_left, "period": ptype, "date": plabel,
         })
     return out
 
@@ -176,7 +187,7 @@ def on_activity(athlete_id):
             pct, last = g["pct"], g["last_pct"]
 
             if pct >= 100 and "done" not in g["sent"]:
-                title, body = _pick("done", _vars(g, label))
+                title, body = _pick("done", _vars(g, label), label, g["date"])
                 push.send_to_athlete(athlete_id, title, body,
                                      tag=f"goal-{g['id']}-done", url="/")
                 _mark_sent(conn, g["id"], g["sent"], "done")
@@ -184,7 +195,7 @@ def on_activity(athlete_id):
                 jump = pct - last
                 notify = (g["level"] == 3) or (g["level"] == 2 and jump >= 20)
                 if notify:
-                    title, body = _pick("progress", _vars(g, label))
+                    title, body = _pick("progress", _vars(g, label), label, g["date"])
                     push.send_to_athlete(athlete_id, title, body,
                                          tag=f"goal-{g['id']}-prog", url="/")
 
@@ -231,7 +242,7 @@ def check_deadlines(athlete_id=None):
                 if g["level"] == 2 and not behind:
                     continue
                 label = _label(g["name"], g["types"])
-                title, body = _pick("deadline", _vars(g, label))
+                title, body = _pick("deadline", _vars(g, label), label, g["date"])
                 push.send_to_athlete(aid, title, body,
                                      tag=f"goal-{g['id']}-{new[-1][1]}", url="/")
                 # Marca TODOS los umbrales cruzados (no solo el más ajustado) para
@@ -269,7 +280,7 @@ def check_failures(athlete_id=None):
             if "done" in sentset or "fail" in sentset:
                 continue
             try:
-                start, end, *_ = resolve_period(ptype, pkey)
+                start, end, date_label, *_ = resolve_period(ptype, pkey)
             except Exception:
                 continue
             if now < end:                       # el periodo aún no ha terminado
@@ -285,7 +296,7 @@ def check_failures(athlete_id=None):
                 continue
             label = _label(name, types)
             g = {"pct": pct, "actual": a, "target": round(target, 1), "period": ptype}
-            title, body = _pick("fail", _vars(g, label))
+            title, body = _pick("fail", _vars(g, label), label, date_label)
             push.send_to_athlete(aid, title, body, tag=f"goal-{gid}-fail", url="/")
             _mark_sent(conn, gid, sentset, "fail")
         conn.commit()
