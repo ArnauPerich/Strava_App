@@ -1748,15 +1748,13 @@ loadStats(currentPeriod);
     notifHint.textContent = LEVEL_HINT[lvl];
   }
 
-  levelsBox.addEventListener('click', async (e) => {
+  levelsBox.addEventListener('click', (e) => {
     const btn = e.target.closest('.plan-level');
     if (!btn) return;
     const lvl = parseInt(btn.dataset.level, 10);
-    if (lvl > 0){
-      const ok = await ensurePush();
-      if (!ok){ setLevel(0); return; }   // sin permiso → vuelve a Off
-    }
-    setLevel(lvl);
+    setLevel(lvl);                  // la selección visual SIEMPRE funciona
+    // Intenta activar el push sin bloquear; ensurePush ya avisa si falla.
+    if (lvl > 0) ensurePush();
   });
 
   function openSheet(){
