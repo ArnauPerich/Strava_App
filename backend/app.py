@@ -18,6 +18,7 @@ from core.webhook import webhook_bp
 from streams.reporte.routes import reporte_bp
 from streams.asistente.routes import asistente_bp
 from streams.nutricion.routes import nutricion_bp
+from streams.planning.routes import planning_bp
 
 
 # ── Suppress the spurious Werkzeug log when simple-websocket hijacks the socket ──
@@ -64,6 +65,7 @@ app.register_blueprint(webhook_bp)
 app.register_blueprint(reporte_bp)
 app.register_blueprint(asistente_bp)
 app.register_blueprint(nutricion_bp)
+app.register_blueprint(planning_bp)
 
 
 # ── Rutas generales (shell de la web) ─────────────────────────────────────────

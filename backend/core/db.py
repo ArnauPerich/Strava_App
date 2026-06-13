@@ -72,6 +72,24 @@ def init_db():
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_food_athlete_day ON food_log(athlete_id, day)")
 
+    # Stream planning: un objetivo de distancia (km) por tipo de actividad anclado
+    # a una instancia concreta del periodo. `period_key` la identifica:
+    #   semana "2026-W24" · mes "2026-06" · año "2026".
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS goals (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id    TEXT,
+            period_type   TEXT,
+            period_key    TEXT,
+            activity_type TEXT,
+            target_km     REAL,
+            updated_at    TEXT,
+            UNIQUE(athlete_id, period_type, period_key, activity_type)
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_goals_lookup "
+              "ON goals(athlete_id, period_type, period_key)")
+
     # Caché de valores nutricionales por 100 g (Open Food Facts u otra fuente),
     # para no repetir búsquedas del mismo alimento. `key` = nombre normalizado.
     c.execute("""

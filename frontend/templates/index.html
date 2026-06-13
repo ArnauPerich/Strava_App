@@ -153,6 +153,82 @@
     min-width: 120px; text-align: center; text-transform: uppercase;
   }
 
+  /* ── Planning: lista de objetivos ── */
+  .plan-list {
+    flex: 1; min-height: 0; overflow-y: auto;
+    padding: 2px 22px 8px; -webkit-overflow-scrolling: touch;
+  }
+  .plan-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 0; border-bottom: 1px solid var(--border);
+  }
+  .pr-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .pr-main { flex: 1; min-width: 0; }
+  .pr-top {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  }
+  .pr-label {
+    font-size: 12px; font-weight: 700; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--text);
+  }
+  .pr-val {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted);
+    white-space: nowrap;
+  }
+  .pr-val b { color: var(--text); font-weight: 500; }
+  .pr-bar {
+    height: 6px; border-radius: 3px; margin-top: 8px;
+    background: rgba(255,255,255,0.06); overflow: hidden;
+  }
+  .pr-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+  .pr-input {
+    width: 56px; flex-shrink: 0; text-align: right;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 8px; color: var(--text);
+    font-family: 'JetBrains Mono', monospace; font-size: 13px;
+    -webkit-appearance: none; appearance: none;
+  }
+  .pr-input:focus { outline: none; border-color: rgba(255,85,51,0.5); }
+  .pr-del {
+    background: none; border: none; color: var(--muted); font-size: 16px;
+    cursor: pointer; padding: 4px; flex-shrink: 0; line-height: 1;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .plan-empty {
+    text-align: center; color: var(--muted); font-size: 12px;
+    padding: 32px 24px; line-height: 1.7;
+  }
+  .plan-foot {
+    flex-shrink: 0; display: flex; gap: 8px; align-items: center;
+    padding: 10px 22px calc(10px + var(--safe-bot));
+    border-top: 1px solid var(--border);
+  }
+  .plan-select {
+    flex: 1; min-width: 0; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 10px; color: var(--text);
+    font-family: 'Syne', sans-serif; font-size: 12px;
+    -webkit-appearance: none; appearance: none;
+  }
+  .plan-select:disabled { opacity: 0.4; }
+  .plan-target {
+    width: 70px; flex-shrink: 0; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 8px; color: var(--text); text-align: center;
+    font-family: 'JetBrains Mono', monospace; font-size: 13px;
+    -webkit-appearance: none; appearance: none;
+  }
+  .plan-target:focus, .plan-select:focus { outline: none; border-color: rgba(255,85,51,0.5); }
+  .plan-add-btn {
+    flex-shrink: 0; background: rgba(255,85,51,0.12);
+    border: 1px solid rgba(255,85,51,0.4); border-radius: 10px;
+    padding: 10px 14px; color: var(--accent);
+    font-family: 'Syne', sans-serif; font-weight: 800; font-size: 11px;
+    letter-spacing: 1px; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .plan-add-btn:disabled { opacity: 0.4; cursor: default; }
+
   /* ── Nutrition: photo button + status ── */
   .nutri-foot {
     flex-shrink: 0;
@@ -628,7 +704,38 @@
       </div>
     </section>
 
-    <!-- ── Page 2: nutrition ── -->
+    <!-- ── Page 2: planning (objetivos) ── -->
+    <section class="page" id="page-plan">
+      <div class="period-tabs" id="plan-tabs">
+        <button class="tab active" data-period="week">SEMANA</button>
+        <button class="tab" data-period="month">MES</button>
+        <button class="tab" data-period="year">AÑO</button>
+      </div>
+
+      <div class="day-nav">
+        <button class="day-arrow" id="plan-prev" aria-label="Periodo anterior">‹</button>
+        <div class="day-label" id="plan-label">—</div>
+        <button class="day-arrow" id="plan-next" aria-label="Periodo siguiente">›</button>
+      </div>
+
+      <div class="summary">
+        <div class="summary-km" id="plan-total">—<span class="unit">%</span></div>
+        <div class="summary-label">objetivo completado</div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="plan-list" id="plan-list"></div>
+
+      <div class="plan-foot">
+        <select id="plan-type" class="plan-select"></select>
+        <input id="plan-target" class="plan-target" type="number" min="0" step="0.1"
+               inputmode="decimal" placeholder="km">
+        <button id="plan-add-btn" class="plan-add-btn">AÑADIR</button>
+      </div>
+    </section>
+
+    <!-- ── Page 3: nutrition ── -->
     <section class="page" id="page-nutri">
       <div class="day-nav">
         <button class="day-arrow" id="nutri-prev" aria-label="Día anterior">‹</button>
@@ -658,7 +765,7 @@
       </div>
     </section>
 
-    <!-- ── Page 3: voice assistant ── -->
+    <!-- ── Page 4: voice assistant ── -->
     <section class="page" id="page-voice">
       <div class="voice-header">
         <div class="voice-title">ASISTENTE</div>
@@ -682,6 +789,7 @@
     <span class="dot active" data-page="0"></span>
     <span class="dot" data-page="1"></span>
     <span class="dot" data-page="2"></span>
+    <span class="dot" data-page="3"></span>
   </div>
 
   <!-- ── Nutrition: editable food log (bottom sheet) ── -->
@@ -1040,10 +1148,10 @@ function setStatus(state, text) {
   if (txt) txt.textContent = text;
 }
 
-// ── Tabs ──────────────────────────────────────────────────────────────────────
-document.querySelectorAll('.tab').forEach(btn => {
+// ── Tabs (solo los de la página de stats) ─────────────────────────────────────
+document.querySelectorAll('#page-stats .tab').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('#page-stats .tab').forEach(t => t.classList.remove('active'));
     btn.classList.add('active');
     currentPeriod = btn.dataset.period;
     loadStats(currentPeriod);
@@ -1395,6 +1503,117 @@ loadStats(currentPeriod);
   dots.forEach((d, i) => d.addEventListener('click', () => {
     pager.scrollTo({ left: i * pager.clientWidth, behavior: 'smooth' });
   }));
+})();
+
+// ── Planning (objetivos por semana / mes / año) ───────────────────────────────
+(function planning(){
+  const tabs    = document.querySelectorAll('#page-plan .tab');
+  const listEl  = document.getElementById('plan-list');
+  const labelEl = document.getElementById('plan-label');
+  const totalEl = document.getElementById('plan-total');
+  const prevBtn = document.getElementById('plan-prev');
+  const nextBtn = document.getElementById('plan-next');
+  const typeSel = document.getElementById('plan-type');
+  const targetIn= document.getElementById('plan-target');
+  const addBtn  = document.getElementById('plan-add-btn');
+  if (!listEl) return;
+
+  let period = 'week';
+  let key    = '';          // '' = instancia actual; el server devuelve la canónica
+  let loaded = false;
+
+  function fmt(n){ return Number.isInteger(n) ? String(n) : n.toFixed(1); }
+
+  async function load(){
+    const q = key ? `&key=${encodeURIComponent(key)}` : '';
+    try {
+      const res  = await fetch(`/api/planning?period=${period}${q}`);
+      const data = await res.json();
+      if (data.error) return;
+      key = data.key;
+      render(data);
+      loaded = true;
+    } catch (e) { /* offline: se reintenta en el próximo refresh */ }
+  }
+
+  function render(data){
+    labelEl.textContent = data.label;
+    totalEl.innerHTML   = `${data.total_pct}<span class="unit">%</span>`;
+    prevBtn.dataset.key = data.prev;
+    nextBtn.dataset.key = data.next;
+
+    listEl.innerHTML = '';
+    if (!data.goals.length){
+      listEl.innerHTML = '<div class="plan-empty">Sin objetivos para este periodo.<br>Añade uno abajo 👇</div>';
+    }
+    for (const g of data.goals){
+      const row = document.createElement('div');
+      row.className = 'plan-row';
+      row.innerHTML = `
+        <span class="pr-dot" style="background:${g.color}"></span>
+        <div class="pr-main">
+          <div class="pr-top">
+            <span class="pr-label">${g.label}</span>
+            <span class="pr-val"><b>${fmt(g.actual)}</b> / ${fmt(g.target)} km · ${g.pct}%</span>
+          </div>
+          <div class="pr-bar"><div class="pr-fill" style="width:${g.pct}%;background:${g.color}"></div></div>
+        </div>
+        <input class="pr-input" type="number" min="0" step="0.1" inputmode="decimal" value="${fmt(g.target)}">
+        <button class="pr-del" aria-label="Eliminar">✕</button>`;
+
+      const input = row.querySelector('.pr-input');
+      input.addEventListener('change', () => saveGoal(g.type, parseFloat(input.value)));
+      row.querySelector('.pr-del').addEventListener('click', () => saveGoal(g.type, 0));
+      listEl.appendChild(row);
+    }
+
+    // El selector solo ofrece tipos que aún no tienen objetivo.
+    const used = new Set(data.goals.map(g => g.type));
+    const free = data.all_types.filter(t => !used.has(t.type));
+    typeSel.innerHTML = free.map(t => `<option value="${t.type}">${t.label}</option>`).join('');
+    const none = free.length === 0;
+    typeSel.disabled = none;
+    addBtn.disabled  = none;
+  }
+
+  async function saveGoal(type, target){
+    if (isNaN(target)) return;
+    try {
+      const res = await fetch('/api/planning/goal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period, key, type, target }),
+      });
+      const data = await res.json();
+      if (!data.error) render(data);
+    } catch (e) {}
+  }
+
+  // ── Eventos ──
+  tabs.forEach(btn => btn.addEventListener('click', () => {
+    tabs.forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    period = btn.dataset.period;
+    key = '';               // al cambiar de periodo, volvemos a la instancia actual
+    load();
+  }));
+
+  prevBtn.addEventListener('click', () => { key = prevBtn.dataset.key; load(); });
+  nextBtn.addEventListener('click', () => { key = nextBtn.dataset.key; load(); });
+
+  addBtn.addEventListener('click', () => {
+    if (typeSel.disabled) return;
+    const t = parseFloat(targetIn.value);
+    if (isNaN(t) || t <= 0) { targetIn.focus(); return; }
+    saveGoal(typeSel.value, t);
+    targetIn.value = '';
+  });
+
+  // Refresca el progreso cuando llegan actividades nuevas o (re)conecta el socket.
+  socket.on('refresh', () => { if (loaded) load(); });
+  socket.on('connect', () => { if (loaded) load(); });
+
+  load();   // carga inicial
 })();
 
 // ── Voice assistant (hold to talk → Whisper → GPT → TTS) ──────────────────────
