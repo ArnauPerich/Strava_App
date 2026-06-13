@@ -36,7 +36,8 @@ class _WSHijackFilter(logging.Filter):
 logging.getLogger("werkzeug").addFilter(_WSHijackFilter())
 
 
-app = Flask(__name__, template_folder=config.TEMPLATE_DIR)
+app = Flask(__name__, template_folder=config.TEMPLATE_DIR,
+            static_folder=config.STATIC_DIR, static_url_path="/static")
 app.secret_key = config.SECRET_KEY
 # Long-lived, persistent session cookie (helps when the device keeps the cookie)
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=365)
@@ -84,6 +85,23 @@ def _icons():
 @app.route("/apple-touch-icon.png")
 def _apple_touch_icon():
     return send_from_directory(config.STATIC_DIR, "apple-touch-icon.png")
+
+
+# ── PWA ───────────────────────────────────────────────────────────────────────
+# El service worker DEBE servirse desde la raíz para que su scope controle "/".
+@app.route("/sw.js")
+def _service_worker():
+    resp = send_from_directory(config.STATIC_DIR, "sw.js")
+    resp.headers["Content-Type"] = "application/javascript"
+    resp.headers["Cache-Control"] = "no-cache"  # que el navegador detecte updates
+    resp.headers["Service-Worker-Allowed"] = "/"
+    return resp
+
+@app.route("/manifest.webmanifest")
+def _manifest():
+    resp = send_from_directory(config.STATIC_DIR, "manifest.webmanifest")
+    resp.headers["Content-Type"] = "application/manifest+json"
+    return resp
 
 
 init_db()
