@@ -65,4 +65,5 @@ def api_planning_goal():
     if not types:
         return jsonify({"error": "bad_types"}), 400
 
-    return jsonify(service.set_goal(athlete_id, period, key, types, target))
+    name = str(body.get("name", ""))
+    return jsonify(service.set_goal(athlete_id, period, key, types, target, name))

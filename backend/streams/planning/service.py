@@ -126,7 +126,7 @@ def get_plan(athlete_id, period_type, key):
     conn = sqlite3.connect(DB_PATH)
     actual = _actual_by_type(conn, athlete_id, start, end)
     rows = conn.execute("""
-        SELECT id, activity_types, target_km
+        SELECT id, activity_types, name, target_km
         FROM goals
         WHERE athlete_id=? AND period_type=? AND period_key=?
     """, (str(athlete_id), period_type, canonical)).fetchall()
@@ -141,7 +141,7 @@ def get_plan(athlete_id, period_type, key):
     goals = []
     tgt_sum = 0.0
     done_sum = 0.0
-    for gid, types_str, target_km in sorted(rows, key=sort_key):
+    for gid, types_str, name, target_km in sorted(rows, key=sort_key):
         types = [t for t in (types_str or "").split(",") if t]
         if not types:
             continue
@@ -149,10 +149,14 @@ def get_plan(athlete_id, period_type, key):
         # El objetivo se cumple con la SUMA de la distancia de todos sus tipos.
         a = round(sum(actual.get(t, 0.0) for t in types), 1)
         pct = min(100, round(a / target * 100)) if target > 0 else 0
-        label_txt = " + ".join(fallback_meta(t)["label"] for t in types)
+        types_label = " + ".join(fallback_meta(t)["label"] for t in types)
+        name = (name or "").strip()
         color = fallback_meta(types[0])["color"]
         goals.append({
-            "id": gid, "types": types, "label": label_txt, "color": color,
+            "id": gid, "types": types, "color": color,
+            "name": name,
+            "label": name or types_label,   # nombre propio, o los deportes si no hay
+            "sub": types_label if name else "",
             "target": target, "actual": a, "pct": pct,
         })
         tgt_sum += target
@@ -172,29 +176,22 @@ def get_plan(athlete_id, period_type, key):
     }
 
 
-def set_goal(athlete_id, period_type, key, types, target_km):
-    """Crea (o actualiza si ya existe el mismo conjunto) un objetivo combinado."""
+def set_goal(athlete_id, period_type, key, types, target_km, name=""):
+    """Crea un objetivo combinado con nombre opcional."""
     _, _, _, _, _, canonical = resolve_period(period_type, key)
     type_list = _canon_types(types)
     if not type_list or target_km is None or target_km <= 0:
         return get_plan(athlete_id, period_type, canonical)
     types_str = ",".join(type_list)
+    name = (name or "").strip()[:40]
 
     conn = sqlite3.connect(DB_PATH)
     try:
-        existing = conn.execute("""
-            SELECT id FROM goals
-            WHERE athlete_id=? AND period_type=? AND period_key=? AND activity_types=?
-        """, (str(athlete_id), period_type, canonical, types_str)).fetchone()
-        if existing:
-            conn.execute("UPDATE goals SET target_km=?, updated_at=? WHERE id=?",
-                         (round(float(target_km), 2), datetime.now().isoformat(), existing[0]))
-        else:
-            conn.execute("""
-                INSERT INTO goals (athlete_id, period_type, period_key, activity_types, target_km, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (str(athlete_id), period_type, canonical, types_str,
-                  round(float(target_km), 2), datetime.now().isoformat()))
+        conn.execute("""
+            INSERT INTO goals (athlete_id, period_type, period_key, activity_types, name, target_km, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (str(athlete_id), period_type, canonical, types_str, name,
+              round(float(target_km), 2), datetime.now().isoformat()))
         conn.commit()
     finally:
         conn.close()

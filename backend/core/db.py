@@ -84,10 +84,14 @@ def init_db():
             period_type    TEXT,
             period_key     TEXT,
             activity_types TEXT,
+            name           TEXT,
             target_km      REAL,
             updated_at     TEXT
         )
     """)
+    gcols = {row[1] for row in c.execute("PRAGMA table_info(goals)").fetchall()}
+    if "name" not in gcols:
+        c.execute("ALTER TABLE goals ADD COLUMN name TEXT")
     c.execute("CREATE INDEX IF NOT EXISTS idx_goals_lookup "
               "ON goals(athlete_id, period_type, period_key)")
 
