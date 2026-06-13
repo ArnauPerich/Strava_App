@@ -40,10 +40,6 @@ def api_planning_goal():
     if period not in service.PERIODS:
         return jsonify({"error": "bad_period"}), 400
 
-    atype = str(body.get("type", "")).strip()
-    if atype not in _VALID_TYPES:
-        return jsonify({"error": "bad_type"}), 400
-
     key = str(body.get("key", ""))
 
     target = body.get("target")
@@ -53,4 +49,20 @@ def api_planning_goal():
         except (TypeError, ValueError):
             return jsonify({"error": "bad_target"}), 400
 
-    return jsonify(service.set_goal(athlete_id, period, key, atype, target))
+    # Editar/borrar un objetivo existente por id.
+    if body.get("id") is not None:
+        try:
+            goal_id = int(body["id"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "bad_id"}), 400
+        return jsonify(service.update_goal(athlete_id, period, key, goal_id, target))
+
+    # Crear un objetivo combinado a partir de una lista de tipos.
+    types = body.get("types")
+    if not isinstance(types, list):
+        return jsonify({"error": "bad_types"}), 400
+    types = [t for t in types if t in _VALID_TYPES]
+    if not types:
+        return jsonify({"error": "bad_types"}), 400
+
+    return jsonify(service.set_goal(athlete_id, period, key, types, target))

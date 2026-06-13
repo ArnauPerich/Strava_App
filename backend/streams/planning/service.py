@@ -109,35 +109,50 @@ def all_types():
     return out
 
 
+def _canon_types(types):
+    """Normaliza una lista de tipos: válidos, sin duplicados y en orden estable."""
+    order = list(ACTIVITY_META.keys())
+    seen = []
+    for t in types or []:
+        if t in ACTIVITY_META and t not in seen:
+            seen.append(t)
+    seen.sort(key=lambda t: order.index(t))
+    return seen
+
+
 def get_plan(athlete_id, period_type, key):
     start, end, label, prev, nxt, canonical = resolve_period(period_type, key)
 
     conn = sqlite3.connect(DB_PATH)
     actual = _actual_by_type(conn, athlete_id, start, end)
     rows = conn.execute("""
-        SELECT activity_type, target_km
+        SELECT id, activity_types, target_km
         FROM goals
         WHERE athlete_id=? AND period_type=? AND period_key=?
     """, (str(athlete_id), period_type, canonical)).fetchall()
     conn.close()
 
-    targets = {atype: tgt for atype, tgt in rows}
-
-    # Orden estable según ACTIVITY_META; tipos desconocidos al final.
     order = list(ACTIVITY_META.keys())
-    ordered = sorted(targets.keys(),
-                     key=lambda t: order.index(t) if t in order else len(order))
+
+    def sort_key(row):
+        types = [t for t in (row[1] or "").split(",") if t]
+        return order.index(types[0]) if types and types[0] in order else len(order)
 
     goals = []
     tgt_sum = 0.0
     done_sum = 0.0
-    for atype in ordered:
-        target = round(targets[atype], 1)
-        a = round(actual.get(atype, 0.0), 1)
+    for gid, types_str, target_km in sorted(rows, key=sort_key):
+        types = [t for t in (types_str or "").split(",") if t]
+        if not types:
+            continue
+        target = round(target_km, 1)
+        # El objetivo se cumple con la SUMA de la distancia de todos sus tipos.
+        a = round(sum(actual.get(t, 0.0) for t in types), 1)
         pct = min(100, round(a / target * 100)) if target > 0 else 0
-        meta = fallback_meta(atype)
+        label_txt = " + ".join(fallback_meta(t)["label"] for t in types)
+        color = fallback_meta(types[0])["color"]
         goals.append({
-            "type": atype, "label": meta["label"], "color": meta["color"],
+            "id": gid, "types": types, "label": label_txt, "color": color,
             "target": target, "actual": a, "pct": pct,
         })
         tgt_sum += target
@@ -157,24 +172,47 @@ def get_plan(athlete_id, period_type, key):
     }
 
 
-def set_goal(athlete_id, period_type, key, activity_type, target_km):
-    """Crea/actualiza un objetivo. target_km <= 0 lo elimina. Devuelve el plan."""
+def set_goal(athlete_id, period_type, key, types, target_km):
+    """Crea (o actualiza si ya existe el mismo conjunto) un objetivo combinado."""
+    _, _, _, _, _, canonical = resolve_period(period_type, key)
+    type_list = _canon_types(types)
+    if not type_list or target_km is None or target_km <= 0:
+        return get_plan(athlete_id, period_type, canonical)
+    types_str = ",".join(type_list)
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        existing = conn.execute("""
+            SELECT id FROM goals
+            WHERE athlete_id=? AND period_type=? AND period_key=? AND activity_types=?
+        """, (str(athlete_id), period_type, canonical, types_str)).fetchone()
+        if existing:
+            conn.execute("UPDATE goals SET target_km=?, updated_at=? WHERE id=?",
+                         (round(float(target_km), 2), datetime.now().isoformat(), existing[0]))
+        else:
+            conn.execute("""
+                INSERT INTO goals (athlete_id, period_type, period_key, activity_types, target_km, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (str(athlete_id), period_type, canonical, types_str,
+                  round(float(target_km), 2), datetime.now().isoformat()))
+        conn.commit()
+    finally:
+        conn.close()
+    return get_plan(athlete_id, period_type, canonical)
+
+
+def update_goal(athlete_id, period_type, key, goal_id, target_km):
+    """Cambia el target de un objetivo existente por id. target_km <= 0 lo borra."""
     _, _, _, _, _, canonical = resolve_period(period_type, key)
     conn = sqlite3.connect(DB_PATH)
     try:
         if target_km is None or target_km <= 0:
-            conn.execute("""
-                DELETE FROM goals
-                WHERE athlete_id=? AND period_type=? AND period_key=? AND activity_type=?
-            """, (str(athlete_id), period_type, canonical, activity_type))
+            conn.execute("DELETE FROM goals WHERE id=? AND athlete_id=?",
+                         (goal_id, str(athlete_id)))
         else:
-            conn.execute("""
-                INSERT INTO goals (athlete_id, period_type, period_key, activity_type, target_km, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(athlete_id, period_type, period_key, activity_type)
-                DO UPDATE SET target_km = excluded.target_km, updated_at = excluded.updated_at
-            """, (str(athlete_id), period_type, canonical, activity_type,
-                  round(float(target_km), 2), datetime.now().isoformat()))
+            conn.execute("UPDATE goals SET target_km=?, updated_at=? WHERE id=? AND athlete_id=?",
+                         (round(float(target_km), 2), datetime.now().isoformat(),
+                          goal_id, str(athlete_id)))
         conn.commit()
     finally:
         conn.close()

@@ -72,19 +72,20 @@ def init_db():
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_food_athlete_day ON food_log(athlete_id, day)")
 
-    # Stream planning: un objetivo de distancia (km) por tipo de actividad anclado
-    # a una instancia concreta del periodo. `period_key` la identifica:
-    #   semana "2026-W24" · mes "2026-06" · año "2026".
+    # Stream planning: un objetivo de distancia (km) anclado a una instancia del
+    # periodo (`period_key`: semana "2026-W24" · mes "2026-06" · año "2026").
+    # `activity_types` es una lista de tipos separados por comas: el objetivo se
+    # cumple con la SUMA de la distancia de todos ellos (p.ej. "TrailRun,Run").
+    _migrate_goals(c)
     c.execute("""
         CREATE TABLE IF NOT EXISTS goals (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            athlete_id    TEXT,
-            period_type   TEXT,
-            period_key    TEXT,
-            activity_type TEXT,
-            target_km     REAL,
-            updated_at    TEXT,
-            UNIQUE(athlete_id, period_type, period_key, activity_type)
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id     TEXT,
+            period_type    TEXT,
+            period_key     TEXT,
+            activity_types TEXT,
+            target_km      REAL,
+            updated_at     TEXT
         )
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_goals_lookup "
@@ -116,6 +117,32 @@ def _migrate_food_log(cursor):
     for name, decl in (("grams", "REAL"), ("fat", "REAL")):
         if name not in cols:
             cursor.execute(f"ALTER TABLE food_log ADD COLUMN {name} {decl}")
+
+
+def _migrate_goals(cursor):
+    """Convierte el esquema antiguo (`activity_type`, un tipo por objetivo) al
+    nuevo (`activity_types`, lista combinada). Cada objetivo antiguo pasa a ser
+    un objetivo de un único tipo, conservando su target."""
+    cols = {row[1] for row in cursor.execute("PRAGMA table_info(goals)").fetchall()}
+    if not cols or "activity_type" not in cols or "activity_types" in cols:
+        return
+    cursor.execute("ALTER TABLE goals RENAME TO goals_old")
+    cursor.execute("""
+        CREATE TABLE goals (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id     TEXT,
+            period_type    TEXT,
+            period_key     TEXT,
+            activity_types TEXT,
+            target_km      REAL,
+            updated_at     TEXT
+        )
+    """)
+    cursor.execute("""
+        INSERT INTO goals (athlete_id, period_type, period_key, activity_types, target_km, updated_at)
+        SELECT athlete_id, period_type, period_key, activity_type, target_km, updated_at FROM goals_old
+    """)
+    cursor.execute("DROP TABLE goals_old")
 
 
 # ── Estado de sincronización inicial ──────────────────────────────────────────

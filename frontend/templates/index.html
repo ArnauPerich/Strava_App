@@ -837,7 +837,7 @@
       </label>
       <div class="plan-chips-label">Actividades</div>
       <div class="plan-chips" id="plan-chips"></div>
-      <button class="plan-save-btn" id="plan-save">Añadir objetivo</button>
+      <button class="plan-save-btn" id="plan-save">Añadir</button>
     </div>
   </div>
 
@@ -1598,7 +1598,7 @@ loadStats(currentPeriod);
     nextBtn.dataset.key = data.next;
 
     allTypes  = data.all_types || [];
-    goalTypes = new Set(data.goals.map(g => g.type));
+    goalTypes = new Set(data.goals.flatMap(g => g.types));
 
     listEl.innerHTML = '';
     if (!data.goals.length){
@@ -1620,29 +1620,27 @@ loadStats(currentPeriod);
         <button class="pr-del" aria-label="Eliminar">✕</button>`;
 
       const input = row.querySelector('.pr-input');
-      input.addEventListener('change', () => saveGoal([g.type], parseFloat(input.value)));
-      row.querySelector('.pr-del').addEventListener('click', () => saveGoal([g.type], 0));
+      input.addEventListener('change', () => updateGoal(g.id, parseFloat(input.value)));
+      row.querySelector('.pr-del').addEventListener('click', () => updateGoal(g.id, 0));
       listEl.appendChild(row);
     }
   }
 
-  // Fija el mismo target para una o varias actividades. target 0 borra.
-  async function saveGoal(types, target){
-    if (isNaN(target)) return;
-    let last = null;
-    for (const type of types){
-      try {
-        const res = await fetch('/api/planning/goal', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ period, key, type, target }),
-        });
-        const data = await res.json();
-        if (!data.error) last = data;
-      } catch (e) {}
-    }
-    if (last) render(last);
+  async function post(payload){
+    try {
+      const res = await fetch('/api/planning/goal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ period, key }, payload)),
+      });
+      const data = await res.json();
+      if (!data.error) render(data);
+    } catch (e) {}
   }
+  // Editar/borrar un objetivo existente (target 0 lo borra).
+  function updateGoal(id, target){ return isNaN(target) ? null : post({ id, target }); }
+  // Crear un objetivo combinado: un único target para la SUMA de varios tipos.
+  function createGoal(types, target){ return isNaN(target) ? null : post({ types, target }); }
 
   // ── Pop-up "nuevo objetivo" ──
   function renderChips(){
@@ -1675,7 +1673,7 @@ loadStats(currentPeriod);
     if (isNaN(t) || t <= 0) { kmInput.focus(); return; }
     if (!selected.size) return;
     saveBtn.disabled = true;
-    await saveGoal([...selected], t);
+    await createGoal([...selected], t);
     saveBtn.disabled = false;
     closeSheet();
   }
