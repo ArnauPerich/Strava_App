@@ -5,3 +5,4 @@ requests>=2.31.0
 simple-websocket>=1.0.0
 gunicorn>=21.0.0
 openai>=1.40.0
+pywebpush>=1.14.0

@@ -90,10 +90,27 @@ def init_db():
         )
     """)
     gcols = {row[1] for row in c.execute("PRAGMA table_info(goals)").fetchall()}
-    if "name" not in gcols:
-        c.execute("ALTER TABLE goals ADD COLUMN name TEXT")
+    for col, decl in (("name", "TEXT"),
+                      ("notify_level", "INTEGER DEFAULT 0"),  # 0 off · 1 suave · 2 normal · 3 insistente
+                      ("last_pct", "INTEGER DEFAULT 0"),       # último % notificado (progreso)
+                      ("notif_sent", "TEXT DEFAULT ''")):      # avisos puntuales ya enviados: "done,d25,..."
+        if col not in gcols:
+            c.execute(f"ALTER TABLE goals ADD COLUMN {col} {decl}")
     c.execute("CREATE INDEX IF NOT EXISTS idx_goals_lookup "
               "ON goals(athlete_id, period_type, period_key)")
+
+    # Suscripciones Web Push (una por navegador/dispositivo del atleta).
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id  TEXT,
+            endpoint    TEXT UNIQUE,
+            p256dh      TEXT,
+            auth        TEXT,
+            created_at  TEXT
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_push_athlete ON push_subscriptions(athlete_id)")
 
     # Caché de valores nutricionales por 100 g (Open Food Facts u otra fuente),
     # para no repetir búsquedas del mismo alimento. `key` = nombre normalizado.

@@ -251,8 +251,23 @@
   .plan-chip .chip-dot { width: 9px; height: 9px; border-radius: 50%; }
   .plan-chip.sel { color: var(--text); background: rgba(255,255,255,0.07); }
   .plan-chip .chip-has { font-size: 9px; color: var(--muted); margin-left: 2px; }
+  .plan-levels { display: flex; gap: 6px; }
+  .plan-level {
+    flex: 1; padding: 9px 0; border: 1px solid var(--border);
+    background: var(--surface); border-radius: 10px; color: var(--muted);
+    font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700;
+    letter-spacing: 0.5px; cursor: pointer; -webkit-tap-highlight-color: transparent;
+    transition: all 0.15s ease;
+  }
+  .plan-level.active {
+    background: rgba(255,85,51,0.12); border-color: rgba(255,85,51,0.4); color: var(--accent);
+  }
+  .plan-notif-hint {
+    font-size: 10px; color: var(--muted); margin-top: 8px;
+    min-height: 14px; line-height: 1.5;
+  }
   .plan-save-btn {
-    margin-top: 22px; width: 100%;
+    margin-top: 18px; width: 100%;
     background: rgba(255,85,51,0.14); border: 1px solid rgba(255,85,51,0.45);
     color: var(--accent); border-radius: 14px; padding: 15px;
     font-family: 'Syne', sans-serif; font-weight: 800; font-size: 13px;
@@ -838,6 +853,14 @@
       </label>
       <div class="plan-chips-label">Actividades</div>
       <div class="plan-chips" id="plan-chips"></div>
+      <div class="plan-chips-label">Notificaciones</div>
+      <div class="plan-levels" id="plan-levels">
+        <button type="button" class="plan-level active" data-level="0">Off</button>
+        <button type="button" class="plan-level" data-level="1">Suave</button>
+        <button type="button" class="plan-level" data-level="2">Normal</button>
+        <button type="button" class="plan-level" data-level="3">Insistente</button>
+      </div>
+      <div class="plan-notif-hint" id="plan-notif-hint"></div>
       <button class="plan-save-btn" id="plan-save">Añadir</button>
     </div>
   </div>
@@ -1569,6 +1592,8 @@ loadStats(currentPeriod);
   const nameInput= document.getElementById('plan-name');
   const kmInput  = document.getElementById('plan-km');
   const chipsBox = document.getElementById('plan-chips');
+  const levelsBox= document.getElementById('plan-levels');
+  const notifHint= document.getElementById('plan-notif-hint');
   const saveBtn  = document.getElementById('plan-save');
   if (!listEl) return;
 
@@ -1578,6 +1603,15 @@ loadStats(currentPeriod);
   let allTypes = [];        // catálogo de tipos (para el pop-up)
   let goalTypes = new Set();// tipos que ya tienen objetivo en la instancia actual
   const selected = new Set();// tipos marcados en el pop-up
+  let notifyLevel = 0;      // nivel elegido en el pop-up (0-3)
+  let pushReady = false;    // suscripción push ya registrada esta sesión
+
+  const LEVEL_HINT = {
+    0: 'Sin avisos.',
+    1: 'Solo cuando completes el objetivo (100%).',
+    2: 'Completar + aviso si queda poco tiempo y vas corto + subidas grandes del %.',
+    3: 'Completar + recordatorios al acercarse el fin + cada mejora del %.',
+  };
 
   function fmt(n){ return Number.isInteger(n) ? String(n) : n.toFixed(1); }
   function esc(s){ return String(s).replace(/[&<>"']/g, c =>
@@ -1642,7 +1676,9 @@ loadStats(currentPeriod);
   // Borrar un objetivo existente (target 0 lo borra).
   function updateGoal(id, target){ return isNaN(target) ? null : post({ id, target }); }
   // Crear un objetivo combinado: un único target para la SUMA de varios tipos.
-  function createGoal(types, target, name){ return isNaN(target) ? null : post({ types, target, name }); }
+  function createGoal(types, target, name, notify_level){
+    return isNaN(target) ? null : post({ types, target, name, notify_level });
+  }
 
   // ── Pop-up "nuevo objetivo" ──
   function renderChips(){
@@ -1662,10 +1698,72 @@ loadStats(currentPeriod);
     }
   }
 
+  // ── Notificaciones (Web Push) ──
+  function urlB64ToUint8(b64){
+    const pad = '='.repeat((4 - b64.length % 4) % 4);
+    const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+  }
+
+  // Pide permiso y registra la suscripción push (una vez por sesión).
+  async function ensurePush(){
+    if (pushReady) return true;
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)){
+      notifHint.textContent = 'Tu navegador no soporta notificaciones. En iPhone, añade la app a la pantalla de inicio.';
+      return false;
+    }
+    let perm = Notification.permission;
+    if (perm === 'default') perm = await Notification.requestPermission();
+    if (perm !== 'granted'){
+      notifHint.textContent = 'Permiso de notificaciones denegado.';
+      return false;
+    }
+    try {
+      const { publicKey, enabled } = await (await fetch('/api/push/key')).json();
+      if (!enabled || !publicKey){ notifHint.textContent = 'El servidor no tiene push configurado.'; return false; }
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub){
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlB64ToUint8(publicKey),
+        });
+      }
+      await fetch('/api/push/subscribe', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sub),
+      });
+      pushReady = true;
+      return true;
+    } catch (e){
+      notifHint.textContent = 'No se pudo activar el push.';
+      return false;
+    }
+  }
+
+  function setLevel(lvl){
+    notifyLevel = lvl;
+    [...levelsBox.children].forEach(b =>
+      b.classList.toggle('active', parseInt(b.dataset.level, 10) === lvl));
+    notifHint.textContent = LEVEL_HINT[lvl];
+  }
+
+  levelsBox.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.plan-level');
+    if (!btn) return;
+    const lvl = parseInt(btn.dataset.level, 10);
+    if (lvl > 0){
+      const ok = await ensurePush();
+      if (!ok){ setLevel(0); return; }   // sin permiso → vuelve a Off
+    }
+    setLevel(lvl);
+  });
+
   function openSheet(){
     selected.clear();
     kmInput.value = '';
     nameInput.value = '';
+    setLevel(0);
     renderChips();
     sheet.hidden = false;
   }
@@ -1676,7 +1774,7 @@ loadStats(currentPeriod);
     if (isNaN(t) || t <= 0) { kmInput.focus(); return; }
     if (!selected.size) return;
     saveBtn.disabled = true;
-    await createGoal([...selected], t, nameInput.value.trim());
+    await createGoal([...selected], t, nameInput.value.trim(), notifyLevel);
     saveBtn.disabled = false;
     closeSheet();
   }

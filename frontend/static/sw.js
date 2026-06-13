@@ -4,7 +4,7 @@
  * "shell" estático (HTML, iconos, manifest). NO toca SocketIO ni las rutas de
  * datos/API: esas siempre van a la red para no servir información obsoleta.
  */
-const CACHE = "pulse-shell-v1";
+const CACHE = "pulse-shell-v2";
 const SHELL = [
   "/",
   "/manifest.webmanifest",
@@ -79,6 +79,37 @@ self.addEventListener("fetch", (event) => {
         })
         .catch(() => cached);
       return cached || network;
+    })
+  );
+});
+
+// ── Web Push ──────────────────────────────────────────────────────────────────
+// El servidor envía un JSON con {title, body, tag, url}. Mostramos la
+// notificación del sistema; al tocarla, enfocamos/abrimos la app.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) {}
+  const title = data.title || "Pulse";
+  const options = {
+    body: data.body || "",
+    tag: data.tag || "pulse",
+    icon: "/static/icon-192.png",
+    badge: "/static/icon-192.png",
+    data: { url: data.url || "/" },
+    renotify: true,
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if ("focus" in c) return c.focus();
+      }
+      if (clients.openWindow) return clients.openWindow(url);
     })
   );
 });

@@ -176,22 +176,32 @@ def get_plan(athlete_id, period_type, key):
     }
 
 
-def set_goal(athlete_id, period_type, key, types, target_km, name=""):
-    """Crea un objetivo combinado con nombre opcional."""
-    _, _, _, _, _, canonical = resolve_period(period_type, key)
+def set_goal(athlete_id, period_type, key, types, target_km, name="", notify_level=0):
+    """Crea un objetivo combinado con nombre y nivel de notificación opcionales."""
+    start, end, _, _, _, canonical = resolve_period(period_type, key)
     type_list = _canon_types(types)
     if not type_list or target_km is None or target_km <= 0:
         return get_plan(athlete_id, period_type, canonical)
     types_str = ",".join(type_list)
     name = (name or "").strip()[:40]
+    try:
+        notify_level = max(0, min(3, int(notify_level)))
+    except (TypeError, ValueError):
+        notify_level = 0
 
     conn = sqlite3.connect(DB_PATH)
     try:
+        # last_pct inicial = progreso ya existente, para no disparar "subió" al crear.
+        actual = _actual_by_type(conn, athlete_id, start, end)
+        a = sum(actual.get(t, 0.0) for t in type_list)
+        target = round(float(target_km), 2)
+        last_pct = min(100, int(round(a / target * 100))) if target > 0 else 0
         conn.execute("""
-            INSERT INTO goals (athlete_id, period_type, period_key, activity_types, name, target_km, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO goals (athlete_id, period_type, period_key, activity_types,
+                               name, target_km, updated_at, notify_level, last_pct, notif_sent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '')
         """, (str(athlete_id), period_type, canonical, types_str, name,
-              round(float(target_km), 2), datetime.now().isoformat()))
+              target, datetime.now().isoformat(), notify_level, last_pct))
         conn.commit()
     finally:
         conn.close()

@@ -1,6 +1,8 @@
 """Stream PLANNING: endpoints para leer y fijar objetivos por periodo."""
 from flask import Blueprint, request, session, jsonify
 
+import config
+from core import push
 from streams.planning import service
 
 planning_bp = Blueprint("planning", __name__)
@@ -66,4 +68,25 @@ def api_planning_goal():
         return jsonify({"error": "bad_types"}), 400
 
     name = str(body.get("name", ""))
-    return jsonify(service.set_goal(athlete_id, period, key, types, target, name))
+    notify_level = body.get("notify_level", 0)
+    return jsonify(service.set_goal(athlete_id, period, key, types, target,
+                                    name, notify_level))
+
+
+# ── Web Push ──────────────────────────────────────────────────────────────────
+
+@planning_bp.route("/api/push/key")
+def api_push_key():
+    """Clave pública VAPID + si el servidor puede enviar pushes."""
+    return jsonify({"publicKey": config.VAPID_PUBLIC_KEY, "enabled": push.enabled()})
+
+
+@planning_bp.route("/api/push/subscribe", methods=["POST"])
+def api_push_subscribe():
+    athlete_id, err = _athlete_or_401()
+    if err:
+        return err
+    sub = request.get_json(silent=True) or {}
+    ok = push.save_subscription(athlete_id, sub)
+    return (jsonify({"ok": True}) if ok
+            else (jsonify({"error": "bad_subscription"}), 400))

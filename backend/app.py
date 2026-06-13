@@ -108,6 +108,28 @@ def _manifest():
 
 init_db()
 
+
+# ── Scheduler de notificaciones (fin de plazo) ────────────────────────────────
+# Hilo de fondo que revisa cada 30 min si algún objetivo está por vencer. Es
+# seguro porque desplegamos con gunicorn --workers 1 (un único proceso).
+def _start_deadline_scheduler(interval=1800):
+    import threading, time
+
+    def loop():
+        time.sleep(60)  # margen tras el arranque
+        from streams.planning import notify
+        while True:
+            try:
+                notify.check_deadlines()
+            except Exception as e:
+                app.logger.warning("check_deadlines error: %s", e)
+            time.sleep(interval)
+
+    threading.Thread(target=loop, name="deadline-scheduler", daemon=True).start()
+
+
+_start_deadline_scheduler()
+
 if __name__ == "__main__":
     socketio.run(app, debug=True, use_reloader=False,
                  host="0.0.0.0", port=5000, allow_unsafe_werkzeug=True)

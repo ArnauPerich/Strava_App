@@ -37,4 +37,12 @@ def webhook_event():
                     changed = fetch_and_store_single(athlete_id, activity_id, token)
             if changed:
                 socketio.emit("refresh", {"athlete_id": athlete_id})
+                # Notificaciones de objetivos (progreso/completado). No debe
+                # romper el webhook si el push falla.
+                try:
+                    from streams.planning import notify
+                    notify.on_activity(athlete_id)
+                except Exception as e:
+                    from flask import current_app
+                    current_app.logger.warning("notify.on_activity error: %s", e)
     return jsonify({"status": "ok"})
