@@ -15,6 +15,7 @@ Dos disparadores, modulados por el nivel de insistencia de cada objetivo:
 Cada aviso puntual (completado / fin de plazo) se envía una sola vez: se registra
 en la columna `notif_sent` del objetivo.
 """
+import random
 import logging
 from datetime import datetime
 
@@ -26,6 +27,84 @@ log = logging.getLogger("pulse.notify")
 
 PERIODS = ("week", "month", "year")
 _PERIOD_WORD = {"week": "esta semana", "month": "este mes", "year": "este año"}
+
+
+# ── Plantillas de mensajes ────────────────────────────────────────────────────
+# 3 variantes (título, cuerpo) por categoría; al notificar se elige una al azar.
+# Edita libremente los textos. Huecos disponibles en cualquier plantilla:
+#   {name}    nombre del objetivo (o sus deportes)
+#   {pct}     porcentaje actual (entero)
+#   {actual}  km hechos        {target} km objetivo        {falta} km que faltan
+#   {period}  "esta semana" / "este mes" / "este año"
+MESSAGES = {
+    # Objetivo completado (100%).
+    "done": [
+        ("Well done PUSSY!",
+         "Bien hecho, un objetivo más cumplido. Pero no te relajes, los hombre de "
+         "verdad no se marcan estos objetivos tan flojos..."),
+        ("Another day, another victory",
+         "Eso es! Otro día, la misma mierda: te levantas, te superas, te acuestas"),
+        ("Es la batalla, no la guerra!",
+         "Recuerda... ganar una batalla no significa ganar la guerra! No aflojes BITCH!"),
+    ],
+    # Buen progreso (subió el %).
+    "progress": [
+        ("STAY HARD!",
+         "Muy bien... hoy has sido capaz de mover el puto culo del sofá. ¿Te piensas "
+         "que ya está? Falta muuuuchooooooo..."),
+        ("Eat or be eaten!",
+         "Esa es la actitud! Levantarse cada día, acercarte cada vez más a tu objetivo. "
+         "De lo contrario, estás muerto!"),
+        ("HAHAHAHAHAHAH",
+         "¿Estás contento? ¿Te crees que has conseguido algo importante? Me río de ti "
+         "xaval! Sigue y no aflojes!"),
+    ],
+    # Queda poco: el plazo se acerca y aún no has cumplido (vas tarde).
+    "deadline": [
+        ("TIC TAC, BITCH",
+         "Se te acaba {period} y aún vas al {pct}%. Deja de calentar el sofá y "
+         "mueve el puto culo, que te faltan {falta} km."),
+        ("The clock is ticking...",
+         "El reloj no espera a nadie, y menos a ti. Vas tarde y te queda nada. "
+         "¿Vas a apretar o a seguir siendo un mediocre?"),
+        ("¿Lo vas a dejar escapar?",
+         "Faltan {falta} km y el tiempo se agota. O sudas AHORA o mañana eres otro "
+         "FRACASADO más. Tú decides..."),
+    ],
+    # Fallo: el plazo terminó sin completar el objetivo.
+    "fail": [
+        ("¿No era suficiente decepcionar a tus padres?",
+         "Otro día de tu rutina miserable: decepcionar. Y no era suficiente decepcionar "
+         "a dos que encima ahora queda registrado en la app..."),
+        ("¿A qué has venido?",
+         "Solo una pregunta: ¿estás aquí para pasar el rato y seguir con tu miserable "
+         "vida? ¿No? Pues más te vale cumplir tu próximo objetivo."),
+        ("Sin comentarios...",
+         "Te propones un objetivo de mierda y aún así fracasas. FRACASADO!"),
+    ],
+}
+
+
+def _g(n):
+    """Formatea un número quitando el .0 sobrante: 11.0 → '11', 1.5 → '1.5'."""
+    return format(n, "g")
+
+
+def _vars(g, label):
+    return {
+        "name": label,
+        "pct": g["pct"],
+        "actual": _g(g["actual"]),
+        "target": _g(g["target"]),
+        "falta": _g(round(g["target"] - g["actual"], 1)),
+        "period": _PERIOD_WORD.get(g["period"], ""),
+    }
+
+
+def _pick(category, fmt):
+    """Elige una variante al azar de la categoría y la rellena."""
+    title, body = random.choice(MESSAGES[category])
+    return title, body.format(**fmt)
 
 
 def _label(name, types):
@@ -46,10 +125,8 @@ def _mark_sent(conn, goal_id, sent, kind):
 
 
 def _current_goals(conn, athlete_id):
-    """Itera los objetivos del atleta que están en su instancia ACTUAL.
-
-    Devuelve dicts con todo lo calculado: pct, actual, fracción de tiempo restante.
-    """
+    """Itera los objetivos del atleta que están en su instancia ACTUAL,
+    con su pct/actual ya calculados."""
     rows = conn.execute("""
         SELECT id, period_type, period_key, activity_types, name,
                target_km, notify_level, last_pct, notif_sent
@@ -99,19 +176,17 @@ def on_activity(athlete_id):
             pct, last = g["pct"], g["last_pct"]
 
             if pct >= 100 and "done" not in g["sent"]:
-                push.send_to_athlete(
-                    athlete_id, "🎉 ¡Objetivo completado!",
-                    f"«{label}»: {g['actual']:g} km. ¡{g['pct']}%!",
-                    tag=f"goal-{g['id']}-done", url="/")
+                title, body = _pick("done", _vars(g, label))
+                push.send_to_athlete(athlete_id, title, body,
+                                     tag=f"goal-{g['id']}-done", url="/")
                 _mark_sent(conn, g["id"], g["sent"], "done")
             elif pct < 100 and pct > last:
                 jump = pct - last
                 notify = (g["level"] == 3) or (g["level"] == 2 and jump >= 20)
                 if notify:
-                    push.send_to_athlete(
-                        athlete_id, "🔥 ¡Buen trabajo!",
-                        f"«{label}» al {pct}% ({g['actual']:g}/{g['target']:g} km).",
-                        tag=f"goal-{g['id']}-prog", url="/")
+                    title, body = _pick("progress", _vars(g, label))
+                    push.send_to_athlete(athlete_id, title, body,
+                                         tag=f"goal-{g['id']}-prog", url="/")
 
             if pct != last:
                 conn.execute("UPDATE goals SET last_pct=? WHERE id=?", (pct, g["id"]))
@@ -120,8 +195,7 @@ def on_activity(athlete_id):
         conn.close()
 
 
-# ── Disparador 2: se acerca el fin del plazo ──────────────────────────────────
-
+# ── Disparador 2: se acerca el fin del plazo (queda poco) ─────────────────────
 # Umbrales de "tiempo restante" por nivel (fracción del periodo) y su etiqueta.
 _DEADLINES = {
     2: [(0.25, "d25")],
@@ -130,14 +204,14 @@ _DEADLINES = {
 
 
 def check_deadlines(athlete_id=None):
-    """Revisa objetivos próximos a vencer. Sin athlete_id, recorre todos."""
+    """Avisa de objetivos próximos a vencer (aún a tiempo). Niveles 2 y 3."""
     if not push.enabled():
         return
     conn = connect()
     try:
         if athlete_id is None:
             ids = [r[0] for r in conn.execute(
-                "SELECT DISTINCT athlete_id FROM goals WHERE notify_level > 0").fetchall()]
+                "SELECT DISTINCT athlete_id FROM goals WHERE notify_level >= 2").fetchall()]
         else:
             ids = [str(athlete_id)]
 
@@ -157,12 +231,9 @@ def check_deadlines(athlete_id=None):
                 if g["level"] == 2 and not behind:
                     continue
                 label = _label(g["name"], g["types"])
-                falta = round(g["target"] - g["actual"], 1)
-                push.send_to_athlete(
-                    aid, "⏳ Queda poco",
-                    f"«{label}» {_PERIOD_WORD[g['period']]}: vas al {g['pct']}% "
-                    f"({g['actual']:g}/{g['target']:g} km, faltan {falta:g}).",
-                    tag=f"goal-{g['id']}-{new[-1][1]}", url="/")
+                title, body = _pick("deadline", _vars(g, label))
+                push.send_to_athlete(aid, title, body,
+                                     tag=f"goal-{g['id']}-{new[-1][1]}", url="/")
                 # Marca TODOS los umbrales cruzados (no solo el más ajustado) para
                 # que los más holgados no vuelvan a disparar después.
                 for _f, k in crossed:
@@ -170,3 +241,59 @@ def check_deadlines(athlete_id=None):
         conn.commit()
     finally:
         conn.close()
+
+
+# ── Disparador 3: el plazo terminó sin cumplir el objetivo (fallo) ────────────
+# A diferencia del progreso, mira objetivos cuya instancia (semana/mes/año) YA
+# ha terminado y no se completaron. Niveles 2 y 3.
+
+def check_failures(athlete_id=None):
+    """Avisa de objetivos vencidos sin completar. Sin athlete_id, recorre todos."""
+    if not push.enabled():
+        return
+    conn = connect()
+    try:
+        sql = ("SELECT id, athlete_id, period_type, period_key, activity_types, "
+               "name, target_km, notif_sent FROM goals "
+               "WHERE notify_level >= 2 AND target_km > 0")
+        params = ()
+        if athlete_id is not None:
+            sql += " AND athlete_id=?"
+            params = (str(athlete_id),)
+        rows = conn.execute(sql, params).fetchall()
+
+        now = datetime.now()
+        for (gid, aid, ptype, pkey, types_str, name, target, sent) in rows:
+            sentset = _sent_set(sent)
+            # Ya completado o ya avisado del fallo: nada que hacer.
+            if "done" in sentset or "fail" in sentset:
+                continue
+            try:
+                start, end, *_ = resolve_period(ptype, pkey)
+            except Exception:
+                continue
+            if now < end:                       # el periodo aún no ha terminado
+                continue
+            types = [t for t in (types_str or "").split(",") if t]
+            if not types:
+                continue
+            actual = _actual_by_type(conn, aid, start, end)
+            a = round(sum(actual.get(t, 0.0) for t in types), 1)
+            pct = min(100, int(round(a / target * 100))) if target > 0 else 0
+            if pct >= 100:                      # lo logró: no es fallo
+                _mark_sent(conn, gid, sentset, "done")
+                continue
+            label = _label(name, types)
+            g = {"pct": pct, "actual": a, "target": round(target, 1), "period": ptype}
+            title, body = _pick("fail", _vars(g, label))
+            push.send_to_athlete(aid, title, body, tag=f"goal-{gid}-fail", url="/")
+            _mark_sent(conn, gid, sentset, "fail")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def run_periodic():
+    """Chequeos del scheduler: "queda poco" (aún a tiempo) + "fallo" (ya vencido)."""
+    check_deadlines()
+    check_failures()

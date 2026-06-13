@@ -1609,8 +1609,8 @@ loadStats(currentPeriod);
   const LEVEL_HINT = {
     0: 'Sin avisos.',
     1: 'Solo cuando completes el objetivo (100%).',
-    2: 'Completar + aviso si queda poco tiempo y vas corto + subidas grandes del %.',
-    3: 'Completar + recordatorios al acercarse el fin + cada mejora del %.',
+    2: 'Completar, fallo al vencer, aviso si vas tarde y subidas grandes del %.',
+    3: 'Completar, fallo, recordatorios al acercarse el fin y cada mejora del %.',
   };
 
   function fmt(n){ return Number.isInteger(n) ? String(n) : n.toFixed(1); }
