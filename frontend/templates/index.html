@@ -182,12 +182,15 @@
   }
   .pr-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
   .pr-input {
-    width: 56px; flex-shrink: 0; text-align: right;
+    width: 62px; flex-shrink: 0; text-align: right;
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 8px; padding: 7px 8px; color: var(--text);
-    font-family: 'JetBrains Mono', monospace; font-size: 13px;
+    /* 16px evita el zoom automático de iOS al enfocar el input */
+    font-family: 'JetBrains Mono', monospace; font-size: 16px;
     -webkit-appearance: none; appearance: none;
   }
+  .pr-input::-webkit-outer-spin-button,
+  .pr-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   .pr-input:focus { outline: none; border-color: rgba(255,85,51,0.5); }
   .pr-del {
     background: none; border: none; color: var(--muted); font-size: 16px;
@@ -199,35 +202,64 @@
     padding: 32px 24px; line-height: 1.7;
   }
   .plan-foot {
-    flex-shrink: 0; display: flex; gap: 8px; align-items: center;
-    padding: 10px 22px calc(10px + var(--safe-bot));
+    flex-shrink: 0; display: flex; justify-content: center;
+    padding: 12px 22px calc(14px + var(--safe-bot));
     border-top: 1px solid var(--border);
   }
-  .plan-select {
-    flex: 1; min-width: 0; background: var(--surface);
-    border: 1px solid var(--border); border-radius: 10px;
-    padding: 10px 10px; color: var(--text);
-    font-family: 'Syne', sans-serif; font-size: 12px;
-    -webkit-appearance: none; appearance: none;
-  }
-  .plan-select:disabled { opacity: 0.4; }
-  .plan-target {
-    width: 70px; flex-shrink: 0; background: var(--surface);
-    border: 1px solid var(--border); border-radius: 10px;
-    padding: 10px 8px; color: var(--text); text-align: center;
-    font-family: 'JetBrains Mono', monospace; font-size: 13px;
-    -webkit-appearance: none; appearance: none;
-  }
-  .plan-target:focus, .plan-select:focus { outline: none; border-color: rgba(255,85,51,0.5); }
   .plan-add-btn {
-    flex-shrink: 0; background: rgba(255,85,51,0.12);
-    border: 1px solid rgba(255,85,51,0.4); border-radius: 10px;
-    padding: 10px 14px; color: var(--accent);
-    font-family: 'Syne', sans-serif; font-weight: 800; font-size: 11px;
-    letter-spacing: 1px; cursor: pointer;
+    background: rgba(255,85,51,0.12);
+    border: 1px solid rgba(255,85,51,0.4); border-radius: 14px;
+    padding: 14px 30px; color: var(--accent);
+    font-family: 'Syne', sans-serif; font-weight: 800; font-size: 13px;
+    letter-spacing: 1.5px; text-transform: uppercase; cursor: pointer;
+    transition: all 0.2s ease; -webkit-tap-highlight-color: transparent;
+  }
+  .plan-add-btn:hover { transform: translateY(-1px); background: rgba(255,85,51,0.18); }
+
+  /* ── Planning: pop-up "nuevo objetivo" ── */
+  .plan-km-field span {
+    display: block; font-size: 10px; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+  }
+  .plan-km-input {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 4px 16px;
+  }
+  .plan-km-input input {
+    flex: 1; min-width: 0; background: none; border: none; color: var(--text);
+    font-family: 'Bebas Neue', sans-serif; font-size: 34px; letter-spacing: 1px;
+    padding: 8px 0; -webkit-appearance: none; appearance: none;
+  }
+  .plan-km-input input::-webkit-outer-spin-button,
+  .plan-km-input input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .plan-km-input input:focus { outline: none; }
+  .plan-km-input em { font-style: normal; color: var(--muted); font-size: 16px; }
+  .plan-chips-label {
+    font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); margin: 20px 0 10px;
+  }
+  .plan-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .plan-chip {
+    display: flex; align-items: center; gap: 7px;
+    padding: 9px 13px; border-radius: 11px;
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--muted); font-family: 'Syne', sans-serif;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: all 0.15s ease; -webkit-tap-highlight-color: transparent;
+  }
+  .plan-chip .chip-dot { width: 9px; height: 9px; border-radius: 50%; }
+  .plan-chip.sel { color: var(--text); background: rgba(255,255,255,0.07); }
+  .plan-chip .chip-has { font-size: 9px; color: var(--muted); margin-left: 2px; }
+  .plan-save-btn {
+    margin-top: 22px; width: 100%;
+    background: rgba(255,85,51,0.14); border: 1px solid rgba(255,85,51,0.45);
+    color: var(--accent); border-radius: 14px; padding: 15px;
+    font-family: 'Syne', sans-serif; font-weight: 800; font-size: 13px;
+    letter-spacing: 1.5px; text-transform: uppercase; cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
-  .plan-add-btn:disabled { opacity: 0.4; cursor: default; }
+  .plan-save-btn:disabled { opacity: 0.4; cursor: default; }
 
   /* ── Nutrition: photo button + status ── */
   .nutri-foot {
@@ -728,10 +760,7 @@
       <div class="plan-list" id="plan-list"></div>
 
       <div class="plan-foot">
-        <select id="plan-type" class="plan-select"></select>
-        <input id="plan-target" class="plan-target" type="number" min="0" step="0.1"
-               inputmode="decimal" placeholder="km">
-        <button id="plan-add-btn" class="plan-add-btn">AÑADIR</button>
+        <button id="plan-add-open" class="plan-add-btn">+ Añadir objetivo</button>
       </div>
     </section>
 
@@ -790,6 +819,26 @@
     <span class="dot" data-page="1"></span>
     <span class="dot" data-page="2"></span>
     <span class="dot" data-page="3"></span>
+  </div>
+
+  <!-- ── Planning: nuevo objetivo (bottom sheet) ── -->
+  <div class="sheet" id="plan-sheet" hidden>
+    <div class="sheet-panel">
+      <div class="sheet-head">
+        <div class="sheet-title">Nuevo objetivo</div>
+        <button class="sheet-close" id="plan-sheet-close" aria-label="Cerrar">✕</button>
+      </div>
+      <label class="plan-km-field">
+        <span>Distancia objetivo</span>
+        <div class="plan-km-input">
+          <input id="plan-km" type="number" min="0" step="0.1" inputmode="decimal" placeholder="0">
+          <em>km</em>
+        </div>
+      </label>
+      <div class="plan-chips-label">Actividades</div>
+      <div class="plan-chips" id="plan-chips"></div>
+      <button class="plan-save-btn" id="plan-save">Añadir objetivo</button>
+    </div>
   </div>
 
   <!-- ── Nutrition: editable food log (bottom sheet) ── -->
@@ -1513,14 +1562,20 @@ loadStats(currentPeriod);
   const totalEl = document.getElementById('plan-total');
   const prevBtn = document.getElementById('plan-prev');
   const nextBtn = document.getElementById('plan-next');
-  const typeSel = document.getElementById('plan-type');
-  const targetIn= document.getElementById('plan-target');
-  const addBtn  = document.getElementById('plan-add-btn');
+  const openBtn  = document.getElementById('plan-add-open');
+  const sheet    = document.getElementById('plan-sheet');
+  const sheetX   = document.getElementById('plan-sheet-close');
+  const kmInput  = document.getElementById('plan-km');
+  const chipsBox = document.getElementById('plan-chips');
+  const saveBtn  = document.getElementById('plan-save');
   if (!listEl) return;
 
-  let period = 'week';
-  let key    = '';          // '' = instancia actual; el server devuelve la canónica
-  let loaded = false;
+  let period   = 'week';
+  let key      = '';        // '' = instancia actual; el server devuelve la canónica
+  let loaded   = false;
+  let allTypes = [];        // catálogo de tipos (para el pop-up)
+  let goalTypes = new Set();// tipos que ya tienen objetivo en la instancia actual
+  const selected = new Set();// tipos marcados en el pop-up
 
   function fmt(n){ return Number.isInteger(n) ? String(n) : n.toFixed(1); }
 
@@ -1542,9 +1597,12 @@ loadStats(currentPeriod);
     prevBtn.dataset.key = data.prev;
     nextBtn.dataset.key = data.next;
 
+    allTypes  = data.all_types || [];
+    goalTypes = new Set(data.goals.map(g => g.type));
+
     listEl.innerHTML = '';
     if (!data.goals.length){
-      listEl.innerHTML = '<div class="plan-empty">Sin objetivos para este periodo.<br>Añade uno abajo 👇</div>';
+      listEl.innerHTML = '<div class="plan-empty">Sin objetivos para este periodo.<br>Pulsa “+ Añadir objetivo”.</div>';
     }
     for (const g of data.goals){
       const row = document.createElement('div');
@@ -1562,31 +1620,64 @@ loadStats(currentPeriod);
         <button class="pr-del" aria-label="Eliminar">✕</button>`;
 
       const input = row.querySelector('.pr-input');
-      input.addEventListener('change', () => saveGoal(g.type, parseFloat(input.value)));
-      row.querySelector('.pr-del').addEventListener('click', () => saveGoal(g.type, 0));
+      input.addEventListener('change', () => saveGoal([g.type], parseFloat(input.value)));
+      row.querySelector('.pr-del').addEventListener('click', () => saveGoal([g.type], 0));
       listEl.appendChild(row);
     }
-
-    // El selector solo ofrece tipos que aún no tienen objetivo.
-    const used = new Set(data.goals.map(g => g.type));
-    const free = data.all_types.filter(t => !used.has(t.type));
-    typeSel.innerHTML = free.map(t => `<option value="${t.type}">${t.label}</option>`).join('');
-    const none = free.length === 0;
-    typeSel.disabled = none;
-    addBtn.disabled  = none;
   }
 
-  async function saveGoal(type, target){
+  // Fija el mismo target para una o varias actividades. target 0 borra.
+  async function saveGoal(types, target){
     if (isNaN(target)) return;
-    try {
-      const res = await fetch('/api/planning/goal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ period, key, type, target }),
+    let last = null;
+    for (const type of types){
+      try {
+        const res = await fetch('/api/planning/goal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ period, key, type, target }),
+        });
+        const data = await res.json();
+        if (!data.error) last = data;
+      } catch (e) {}
+    }
+    if (last) render(last);
+  }
+
+  // ── Pop-up "nuevo objetivo" ──
+  function renderChips(){
+    chipsBox.innerHTML = '';
+    for (const t of allTypes){
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'plan-chip' + (selected.has(t.type) ? ' sel' : '');
+      chip.style.borderColor = selected.has(t.type) ? t.color : '';
+      chip.innerHTML = `<span class="chip-dot" style="background:${t.color}"></span>${t.label}` +
+        (goalTypes.has(t.type) ? '<span class="chip-has">·ya</span>' : '');
+      chip.addEventListener('click', () => {
+        if (selected.has(t.type)) selected.delete(t.type); else selected.add(t.type);
+        renderChips();
       });
-      const data = await res.json();
-      if (!data.error) render(data);
-    } catch (e) {}
+      chipsBox.appendChild(chip);
+    }
+  }
+
+  function openSheet(){
+    selected.clear();
+    kmInput.value = '';
+    renderChips();
+    sheet.hidden = false;
+  }
+  function closeSheet(){ sheet.hidden = true; }
+
+  async function saveFromSheet(){
+    const t = parseFloat(kmInput.value);
+    if (isNaN(t) || t <= 0) { kmInput.focus(); return; }
+    if (!selected.size) return;
+    saveBtn.disabled = true;
+    await saveGoal([...selected], t);
+    saveBtn.disabled = false;
+    closeSheet();
   }
 
   // ── Eventos ──
@@ -1601,13 +1692,10 @@ loadStats(currentPeriod);
   prevBtn.addEventListener('click', () => { key = prevBtn.dataset.key; load(); });
   nextBtn.addEventListener('click', () => { key = nextBtn.dataset.key; load(); });
 
-  addBtn.addEventListener('click', () => {
-    if (typeSel.disabled) return;
-    const t = parseFloat(targetIn.value);
-    if (isNaN(t) || t <= 0) { targetIn.focus(); return; }
-    saveGoal(typeSel.value, t);
-    targetIn.value = '';
-  });
+  openBtn.addEventListener('click', openSheet);
+  sheetX.addEventListener('click', closeSheet);
+  sheet.addEventListener('click', e => { if (e.target === sheet) closeSheet(); });
+  saveBtn.addEventListener('click', saveFromSheet);
 
   // Refresca el progreso cuando llegan actividades nuevas o (re)conecta el socket.
   socket.on('refresh', () => { if (loaded) load(); });
